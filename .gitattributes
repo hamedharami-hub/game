@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+*.png binary
+*.webp binary
+release/play.html -diff linguist-generated=true

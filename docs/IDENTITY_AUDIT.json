@@ -1,0 +1,167 @@
+{
+  "scope": "23 runtime sheets (18 directional, 4 album, 1 story); original game/ARSHNAZ approved artwork inspected and retained",
+  "replacedAssets": [
+    {
+      "id": "cards-gor-adult",
+      "source": "public/art/source/cards-gor-adult.png",
+      "beforeSha256": "3153e78c5329b4b3922c03e10a16c8baf7cb257da8d74b8320b611c7436b53c1",
+      "afterSha256": "cf4fca43c324745ca13b64666c64fd5e65dcc2b96c7601636eda139086bc0e03",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "cards-gor-small",
+      "source": "public/art/source/cards-gor-small.png",
+      "beforeSha256": "798b7babc8f2e62556a5d6ce99d8666767b8c22f10f955d1d5ce1d9917868dae",
+      "afterSha256": "2da6f6311c470584ab33a7c6f8652d938dbeb58b4dd217d4d17d14ce3a57a7e9",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "cards-angel-adult",
+      "source": "public/art/source/cards-angel-adult.png",
+      "beforeSha256": "21cadaf266b8d3aae7c1fba7629f15d394e9c03ded783fbd24178e3d2697af03",
+      "afterSha256": "b34bee27c373e23dba84b64b900035637bd23c1f55738487127fcf204495020e",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "cards-angel-small",
+      "source": "public/art/source/cards-angel-small.png",
+      "beforeSha256": "452128101593d5274e9c29d1be89a55b4fb1682906ae4a109a4029a3b08e5600",
+      "afterSha256": "242056d6293818f77f3cd306f69943a1b74dc0feaf1449a8f5bdd9b8bcc45887",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "story-adults",
+      "source": "public/art/source/story-adults.png",
+      "beforeSha256": "09112752453c32eede4147e5a6e9fd1a90c8753ff512d0b7e0a2a0a2792e2af8",
+      "afterSha256": "94aa27f09feb5ea92d20f716267138b13da88d9679cbe36a83bcf05b938b51e0",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-classic-white",
+      "source": "public/art/source/look-classic-white.png",
+      "beforeSha256": "25feafdf3e78110d8faef44d108c5077f6e6325eb7a53954f25af353b49e5dae",
+      "afterSha256": "cf4b5f693db869c63ffa3466093401b565096ca3fc246ea28335bd8f7b874570",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-traveler-white",
+      "source": "public/art/source/look-traveler-white.png",
+      "beforeSha256": "8555e0e58dce335423377f9c113da0e157a40b590aad366c33b7a1b19c02b317",
+      "afterSha256": "fcb732bf3a637e8019e124fa4e831bd21e2837e0d497e114813fda6e065db87e",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-celestial-white",
+      "source": "public/art/source/look-celestial-white.png",
+      "beforeSha256": "0900473b24e9c761ca0db3b8c9e2bad5c35269001438869de0253a7a70bd1f03",
+      "afterSha256": "80d30c4c6f84bda15e7071f4ebcca4b195a1fdfbc60fb59d452b724d9a3b091d",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-classic-black",
+      "source": "public/art/source/look-classic-black.png",
+      "beforeSha256": "2b28c896d3b5902cf3d34ad0537eaae1ffeaaf666ab779a168963705ceb6a4e0",
+      "afterSha256": "1a17f9d879a135034715620dca5aac5ef97524506faf36d4b47cf64c0863598a",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-classic-brown",
+      "source": "public/art/source/look-classic-brown.png",
+      "beforeSha256": "7d9c4f605998689e9cd47bcb76a0f2029c806a82b4cba59d07df94e6fcc394ab",
+      "afterSha256": "ee6dfb088ff861525626f865248b1bf86a8d1c6c028c01f74e656e0251d6bd2d",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-traveler-black",
+      "source": "public/art/source/look-traveler-black.png",
+      "beforeSha256": "ccc0343dd691418f17359742921eb4d4306678366694e62e3f338396d3c39c03",
+      "afterSha256": "f2b68ef4e7bcc70bd951c964d2abae485bc0dd4c99f8313aef00e23039bf4529",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-traveler-brown",
+      "source": "public/art/source/look-traveler-brown.png",
+      "beforeSha256": "570968ea6b9ddf5cde0e8167c13f10bf94fcd4949f0428e91b030e070cad4e0b",
+      "afterSha256": "c03bffd632027b91e72c6db1bb951c13477636418a83ed2393a7921c0cd744f3",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-celestial-black",
+      "source": "public/art/source/look-celestial-black.png",
+      "beforeSha256": "af8921d7f977748565444c5a6c5ee12d05aa40c5c0d6b79e17722bc0ed5a4412",
+      "afterSha256": "3fa0df98f8e555110a19871e83b6880a80dfb8dd1f1b0f275d8547604f2ca9b9",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "look-celestial-brown",
+      "source": "public/art/source/look-celestial-brown.png",
+      "beforeSha256": "c5ceef1c766b650b6c19326b48b6e4af1f69c46b724fa9b41ff9869de5a84674",
+      "afterSha256": "089500195232da88ed7c5188b4d773c578467140e433524091757e45aa40cbfc",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-classic-white",
+      "source": "public/art/source/diag-classic-white.png",
+      "beforeSha256": "4d0bb089433dfd10ccd0eab917cdc23ce5cc704b5016e52756b468d21bc17a5b",
+      "afterSha256": "f7d007d38fdaaf5d256a916b47534928cb9f2cca4f026e1f60f9ff94af7a00a4",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-classic-black",
+      "source": "public/art/source/diag-classic-black.png",
+      "beforeSha256": "59e8cd93ad642c207ac13a6a0d5206dea6cf81e492a42ae72e2841cd432f5e35",
+      "afterSha256": "32da130686a3de2a89fdcc0c3b26f750ffaaf577a0ee80c5966310a8b2e20346",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-classic-brown",
+      "source": "public/art/source/diag-classic-brown.png",
+      "beforeSha256": "05b1d9d4ae6ad44edc8da7a91ccefdbfa41247b19cda039110c462d0caf8a897",
+      "afterSha256": "af4f52e8e59a5d13cab70a85db25de64465493db77a3162d4a49230044cffe87",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-traveler-white",
+      "source": "public/art/source/diag-traveler-white.png",
+      "beforeSha256": "35d93c38ee635b158f8f53aea572a9bb090645fe9d6af2901e2438453f1fff1e",
+      "afterSha256": "b3c37f83104f60130176bdb5bcb283e69b8fce4b6c66df59b90741b4efbc2ec9",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-traveler-black",
+      "source": "public/art/source/diag-traveler-black.png",
+      "beforeSha256": "cc87a2c85b4b7eb10f94a1f7e4a5c3f6f53e41b01b9cfb0b0515c7ed6870bffe",
+      "afterSha256": "02dc30032a1a910c41a39ea8d6bc509e5caf8c3c8872840f0450cf1d2937f380",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-traveler-brown",
+      "source": "public/art/source/diag-traveler-brown.png",
+      "beforeSha256": "5bb4f36d24774cc5637518d1c3a04374279d20635ded481805318efcde7f7164",
+      "afterSha256": "4dbab09d73a8a85f1e7f7e38695896d5328b0924af300ea7d0eb34736df9d588",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-celestial-white",
+      "source": "public/art/source/diag-celestial-white.png",
+      "beforeSha256": "3a9159793608d64d55f4d6e25901f965340ab7db143a29bf9db4c91988afefc7",
+      "afterSha256": "0434ee3a205287441d312263c426d925191478d97fc86450f7fea19e0d01ff0c",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-celestial-black",
+      "source": "public/art/source/diag-celestial-black.png",
+      "beforeSha256": "d8ac5bb860dab76006fcf6c3b1c5930696a0be5c508efbbe58ac20a891f5bbc0",
+      "afterSha256": "8acc9901cba0b84f258c8302ef91b34b931a9f627647dcf0a739051322edb49a",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    },
+    {
+      "id": "diag-celestial-brown",
+      "source": "public/art/source/diag-celestial-brown.png",
+      "beforeSha256": "ef11bb7349bb4d2578de6a8a8985c1e312403b0795cc3f400fba9f288d40f168",
+      "afterSha256": "94ea68219f13d3dd408a119187d9d1cabe19d627af0ed8956ed3cfdab59358a8",
+      "review": "Face/eye/brow/nose/cheek/jaw compared with immutable approved reference; layout, hair color and actor identity visually reviewed."
+    }
+  ],
+  "limitations": "Identity review is visual, not a biometric likeness guarantee. Earlier delivered files remain archival; use current corrected package for future work."
+}

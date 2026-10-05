@@ -1,0 +1,47 @@
+{
+  "layout": "3 columns x 2 rows; row-major; square cells",
+  "cards": 24,
+  "assets": [
+    {
+      "source": "public/art/cards-angel-small.webp",
+      "runtime": "public/art/cards-angel-small.webp",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "4b65fd8f7366063b524c1964a33a875ca747d749536e0ba2e57b283011c81afc",
+      "identityReferences": [
+        "angel-compact-approved"
+      ]
+    },
+    {
+      "source": "public/art/cards-gor-small.webp",
+      "runtime": "public/art/cards-gor-small.webp",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "38ced4825c762bd55bb55b44f3d4e0546530646492b456cc410ecdc23f5588f4",
+      "identityReferences": [
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "source": "public/art/cards-gor-adult.webp",
+      "runtime": "public/art/cards-gor-adult.webp",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "2ccc7e05e585157495e79166b126330106779b26eccce562e24815c92e6df860",
+      "identityReferences": [
+        "gorastakh-adult-approved"
+      ]
+    },
+    {
+      "source": "public/art/cards-angel-adult.webp",
+      "runtime": "public/art/cards-angel-adult.webp",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "ad5eb51974caead42589f7674a2a382232753d42b60e3e8e9ce0dcbff45a9014",
+      "identityReferences": [
+        "angel-adult-approved"
+      ]
+    }
+  ],
+  "identityPolicy": "Compact transfer copy. Editable source is the runtime WebP; use approved reference images for faces."
+}

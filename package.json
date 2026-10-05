@@ -1,0 +1,22 @@
+{
+  "name": "dream-caravan",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run verify-art && tsc --noEmit && vite build && node scripts/standalone.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --experimental-strip-types --test src/state.test.ts",
+    "verify-art": "node scripts/verify-art.mjs"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.3.6",
+    "@playwright/test": "^1.56.0"
+  }
+}

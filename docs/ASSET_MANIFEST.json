@@ -1,0 +1,406 @@
+{
+  "format": "transparent 4x2 illustrated atlas",
+  "encoding": "pixel-exact lossless WebP; original PNG retained",
+  "assets": [
+    {
+      "outfit": "celestial",
+      "hair": "black",
+      "runtime": "public/art/look-celestial-black.webp",
+      "source": "public/art/look-celestial-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "cda9dbb0ddf5bfacaad4e10375cafda950fb10b41cc85bbe5a190779f1d459f4",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "celestial",
+      "hair": "brown",
+      "runtime": "public/art/look-celestial-brown.webp",
+      "source": "public/art/look-celestial-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "61a9f6afb79e403119f2e76e72d4ccd68a8a0c9e135ab1beca9efa6c55ee6fc0",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "celestial",
+      "hair": "white",
+      "runtime": "public/art/look-celestial-white.webp",
+      "source": "public/art/look-celestial-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "8b98850939da0763b300ed30694cc9a9acc2029332570219ddd8409e4b974a2b",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "black",
+      "runtime": "public/art/look-classic-black.webp",
+      "source": "public/art/look-classic-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "68eaee6dad4ccc59291601565fd9f7d86db20c2c0d2a3afd1040d6a474e31c71",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "brown",
+      "runtime": "public/art/look-classic-brown.webp",
+      "source": "public/art/look-classic-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "d4e107aaacb68a8c48ebd60d0647e099cfd9746871f033c4a58ef77bc6a89996",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "white",
+      "runtime": "public/art/look-classic-white.webp",
+      "source": "public/art/look-classic-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "36a6d23bd19dab4ec5f0f4e2cb8f0c63b0ad4eeb66998f9357ba3476e8d1a973",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "black",
+      "runtime": "public/art/look-traveler-black.webp",
+      "source": "public/art/look-traveler-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "838f7e38d63a3567fe10f86f8d86fec476311f8982c13dec68d5447a58bf68e9",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "brown",
+      "runtime": "public/art/look-traveler-brown.webp",
+      "source": "public/art/look-traveler-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "dfce0250daa2ef83e73957b56af9857a8e432e967431f8e358f384ae7bac8448",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "white",
+      "runtime": "public/art/look-traveler-white.webp",
+      "source": "public/art/look-traveler-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "sha256": "64c28d0f43487c54953df3feec3ba6f49eb82a75071e26dd5b36cba788b2a0b9",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    }
+  ],
+  "diagonalAssets": [
+    {
+      "outfit": "celestial",
+      "hair": "black",
+      "runtime": "public/art/diag-celestial-black.webp",
+      "source": "public/art/diag-celestial-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "48452a9d4d97355e4ee3ed1ba5d6518d4d79343535acce64cd95d4ba6870610f",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "celestial",
+      "hair": "brown",
+      "runtime": "public/art/diag-celestial-brown.webp",
+      "source": "public/art/diag-celestial-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "f82977e3a8ee09379abff0dd9cc0f8f8d35f23b161c05cdf03e58055e1381065",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "celestial",
+      "hair": "white",
+      "runtime": "public/art/diag-celestial-white.webp",
+      "source": "public/art/diag-celestial-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "64ad95e10c377877c954013e9ff13c995d60f1a06c3945600a0190b68208cf13",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "black",
+      "runtime": "public/art/diag-classic-black.webp",
+      "source": "public/art/diag-classic-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "6f4e61eba9259df046dbec43751dc94dd69ce065b65af336511f7eac89dbcfa0",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "brown",
+      "runtime": "public/art/diag-classic-brown.webp",
+      "source": "public/art/diag-classic-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "37b554201672cce05b013ab8636244f2b0245d24da1417217a9296043ab9f8a4",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "classic",
+      "hair": "white",
+      "runtime": "public/art/diag-classic-white.webp",
+      "source": "public/art/diag-classic-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "3c52145fc7418bab0e31d7f8bdd211ec4e38cf2d706918fc050ec2d1f691ee15",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "black",
+      "runtime": "public/art/diag-traveler-black.webp",
+      "source": "public/art/diag-traveler-black.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "b282da4e4b6a42a701a8a0747ed8b59cb400edeb4f24f5c152796eee562c45f9",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "brown",
+      "runtime": "public/art/diag-traveler-brown.webp",
+      "source": "public/art/diag-traveler-brown.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "a6e7bdeeaa6ece3a84fe554da1009f935a55a0845961bf138a4603a77b15446b",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    },
+    {
+      "outfit": "traveler",
+      "hair": "white",
+      "runtime": "public/art/diag-traveler-white.webp",
+      "source": "public/art/diag-traveler-white.webp",
+      "width": 1774,
+      "height": 887,
+      "columns": 4,
+      "rows": [
+        "angel",
+        "gorastakh"
+      ],
+      "directions": [
+        "front-right",
+        "back-right",
+        "back-left",
+        "front-left"
+      ],
+      "sha256": "00a6eeb1573c87f33fdb5695560d3388ace149794cdbccf4365a9d2ddde338fb",
+      "identityReferences": [
+        "angel-compact-approved",
+        "gorastakh-compact-approved"
+      ]
+    }
+  ],
+  "storyArtwork": {
+    "runtime": "public/art/story-adults.webp",
+    "source": "public/art/story-adults.webp",
+    "width": 1536,
+    "height": 1024,
+    "places": [
+      "welcome",
+      "first garden restoration"
+    ],
+    "canonicalHair": {
+      "angel": "black",
+      "gorastakh": "white"
+    },
+    "sha256": "e1c6c8279980da7096a0bb9d74b4b0f02b1249eb6a271e3ec268b4a7c0949ab1",
+    "identityReferences": [
+      "angel-adult-approved",
+      "gorastakh-adult-approved"
+    ]
+  },
+  "identityPolicy": "Compact transfer copy. Editable source is the runtime WebP; use approved reference images for faces."
+}

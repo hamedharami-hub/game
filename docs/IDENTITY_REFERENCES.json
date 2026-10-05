@@ -1,0 +1,57 @@
+{
+  "policy": "Immutable owner-approved originals; do not use generated descendants as facial references.",
+  "references": [
+    {
+      "id": "angel-adult-approved",
+      "role": "angel/adult",
+      "path": "public/art/reference/angel-adult-approved.webp",
+      "sha256": "2f1b743c8be86d57274b76c90170616c7983987e25bad61b0c115f30213d471a"
+    },
+    {
+      "id": "angel-approved",
+      "role": "angel/both",
+      "path": "public/art/reference/angel-approved.webp",
+      "sha256": "ffc01b9178579b6032c08786eecd2eceb4e9b745d3f5d7b0e4a03189bce33c80"
+    },
+    {
+      "id": "angel-compact-approved",
+      "role": "angel/compact",
+      "path": "public/art/reference/angel-compact-approved.webp",
+      "sha256": "1e1c4c56139420e9b440562805b549c9f0a8a98b862de4dbdb80f085a9072e3c"
+    },
+    {
+      "id": "gorastakh-adult-approved",
+      "role": "gorastakh/adult",
+      "path": "public/art/reference/gorastakh-adult-approved.webp",
+      "sha256": "46af79823c7e053e0cc7181d73d5564032722f5e8a54df3ec3bd4babc78cbf33"
+    },
+    {
+      "id": "gorastakh-compact-approved",
+      "role": "gorastakh/compact",
+      "path": "public/art/reference/gorastakh-compact-approved.webp",
+      "sha256": "1989ade39410fbc02a570b0fa64ea8de69d81473bd4e00ad758f2564781033b7"
+    }
+  ],
+  "preservedArtwork": [
+    {
+      "path": "public/art/angel.png",
+      "sha256": "6cab6f1ef6aea788e54a8cb3939792326fc5b00a474bd5ee29daf0949da36ce7",
+      "reason": "Original approved artwork retained; compatibility images are not new face references."
+    },
+    {
+      "path": "public/art/gorastakh.png",
+      "sha256": "69ef9923db7399b2b6b47b098c85aa59ac5f2fd54ddb2033cc5d26d59dad4bf0",
+      "reason": "Original approved artwork retained; compatibility images are not new face references."
+    },
+    {
+      "path": "public/art/characters.png",
+      "sha256": "30d36702da44b369a800e88ed8fcf5ce6e8a374e40207ffb0d7d3780382338a6",
+      "reason": "Original approved artwork retained; compatibility images are not new face references."
+    },
+    {
+      "path": "public/art/characters-brown.png",
+      "sha256": "f07fcef37714f1ff8c4f44f56b53368cce4d0219b6f3e79178bb840205a3e9b8",
+      "reason": "Original approved artwork retained; compatibility images are not new face references."
+    }
+  ]
+}
