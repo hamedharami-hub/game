@@ -34,7 +34,8 @@ for (const viewport of [
     await expectNoHorizontalOverflow(page);
     await page.locator('[data-species="moonflower"]').click();
     const gardenDetails = page.locator('.garden-panel details');
-    if (!(await gardenDetails.evaluate(element => element.open))) {
+    // Locator.evaluate widens to HTMLElement | SVGElement; this selector is a <details>, so open is real.
+    if (!(await gardenDetails.evaluate(element => (element as HTMLDetailsElement).open))) {
       await gardenDetails.locator('summary').click();
     }
     await page.locator('#cell-2-2').click();
@@ -131,7 +132,7 @@ test('a legacy v1 garden resumes with ripe flowers and no offline loss', async (
   await expectNoHorizontalOverflow(page);
   await page.locator('#plant-action').click();
   const gardenDetails = page.locator('.garden-panel details');
-  if (!(await gardenDetails.evaluate(element => element.open))) await gardenDetails.locator('summary').click();
+  if (!(await gardenDetails.evaluate(element => (element as HTMLDetailsElement).open))) await gardenDetails.locator('summary').click();
   await expect(page.locator('#cell-2-2')).toHaveAttribute('aria-label', /شکوفه/);
   await expectNoHorizontalOverflow(page);
   await page.locator('#cell-2-2').click();

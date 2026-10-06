@@ -153,15 +153,16 @@ export function updateSpiritDeerState(
 export function createFaunaMeshGroup(scene: T.Scene) {
   const root = new T.Group();
   root.name = 'fauna-group';
+  const dummy = new T.Object3D();
 
   // --- 1. Butterfly meshes (3 colorful pairs) ---
   const butterflyColors = ['#ffd6ea', '#bdf4ff', '#fff3be'];
-  const butterflies: { group: T.Group; leftWing: T.Mesh; rightWing: T.Mesh; center: T.Vector3 }[] = [];
+  const butterflies: { group: T.Group; wings: T.InstancedMesh; flap: (flap: number) => void; center: T.Vector3 }[] = [];
+  const wingGeom = new T.PlaneGeometry(0.18, 0.26);
+  wingGeom.translate(0.09, 0, 0);
 
   for (let i = 0; i < butterflyColors.length; i++) {
     const bGroup = new T.Group();
-    const wingGeom = new T.PlaneGeometry(0.18, 0.26);
-    wingGeom.translate(0.09, 0, 0);
 
     const wingMat = new T.MeshStandardMaterial({
       color: butterflyColors[i],
@@ -172,20 +173,30 @@ export function createFaunaMeshGroup(scene: T.Scene) {
       opacity: 0.9,
     });
 
-    const lWing = new T.Mesh(wingGeom, wingMat);
-    lWing.position.set(-0.02, 0, 0);
-
-    const rWing = new T.Mesh(wingGeom.clone(), wingMat);
-    rWing.position.set(0.02, 0, 0);
-    rWing.rotation.y = Math.PI;
-
-    bGroup.add(lWing, rWing);
+    // Both wings of a butterfly share one batch: same geometry, same material,
+    // only the flap angle differs, so the pair costs a single draw call.
+    const wings = new T.InstancedMesh(wingGeom, wingMat, 2);
+    wings.instanceMatrix.setUsage(T.DynamicDrawUsage);
+    const flap = (angle: number) => {
+      dummy.position.set(-0.02, 0, 0);
+      dummy.rotation.set(0, angle, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      wings.setMatrixAt(0, dummy.matrix);
+      dummy.position.set(0.02, 0, 0);
+      dummy.rotation.set(0, Math.PI - angle, 0);
+      dummy.updateMatrix();
+      wings.setMatrixAt(1, dummy.matrix);
+      wings.instanceMatrix.needsUpdate = true;
+    };
+    flap(0);
+    bGroup.add(wings);
     root.add(bGroup);
 
     butterflies.push({
       group: bGroup,
-      leftWing: lWing,
-      rightWing: rWing,
+      wings,
+      flap,
       center: new T.Vector3(-2 + (i - 1) * 2.2, 0, 14 + (i - 1) * 1.8),
     });
   }
@@ -226,28 +237,34 @@ export function createFaunaMeshGroup(scene: T.Scene) {
     emissiveIntensity: 0.85,
     roughness: 0.1,
   });
-  const leftAntler = new T.Mesh(new T.TorusGeometry(0.24, 0.028, 4, 12, Math.PI * 0.9), antlerMat);
-  leftAntler.position.set(0.62, 1.82, -0.14);
-  leftAntler.rotation.x = 0.4;
-  deerGroup.add(leftAntler);
-
-  const rightAntler = new T.Mesh(new T.TorusGeometry(0.24, 0.028, 4, 12, Math.PI * 0.9), antlerMat);
-  rightAntler.position.set(0.62, 1.82, 0.14);
-  rightAntler.rotation.x = -0.4;
-  deerGroup.add(rightAntler);
+  const antlers = new T.InstancedMesh(new T.TorusGeometry(0.24, 0.028, 4, 12, Math.PI * 0.9), antlerMat, 2);
+  [[-0.14, 0.4], [0.14, -0.4]].forEach(([az, ax], index) => {
+    dummy.position.set(0.62, 1.82, az);
+    dummy.rotation.set(ax, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    antlers.setMatrixAt(index, dummy.matrix);
+  });
+  antlers.instanceMatrix.needsUpdate = true;
+  deerGroup.add(antlers);
 
   // 4 Legs
   const legGeom = new T.CylinderGeometry(0.045, 0.035, 0.88, 5);
-  for (const [lx, lz] of [[-0.38, -0.16], [-0.38, 0.16], [0.38, -0.16], [0.38, 0.16]]) {
-    const leg = new T.Mesh(legGeom, deerMaterial);
-    leg.position.set(lx, 0.44, lz);
-    deerGroup.add(leg);
-  }
+  const legs = new T.InstancedMesh(legGeom, deerMaterial, 4);
+  [[-0.38, -0.16], [-0.38, 0.16], [0.38, -0.16], [0.38, 0.16]].forEach(([lx, lz], index) => {
+    dummy.position.set(lx, 0.44, lz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    legs.setMatrixAt(index, dummy.matrix);
+  });
+  legs.instanceMatrix.needsUpdate = true;
+  deerGroup.add(legs);
 
   root.add(deerGroup);
 
   // --- 3. Celestial Soaring Birds (3 graceful luminous sky birds) ---
-  const celestialBirds: { group: T.Group; leftWing: T.Mesh; rightWing: T.Mesh; orbitRadius: number; altitude: number; speed: number; phase: number }[] = [];
+  const celestialBirds: { group: T.Group; orbitRadius: number; altitude: number; speed: number; phase: number }[] = [];
   const birdMat = new T.MeshStandardMaterial({
     color: '#ffffff',
     emissive: '#e6f7ff',
@@ -257,31 +274,23 @@ export function createFaunaMeshGroup(scene: T.Scene) {
     opacity: 0.92,
   });
 
+  // The flock shares one body batch and one wing batch (world matrices are set
+  // per frame), so three birds cost two draw calls instead of nine.
+  const birdBodies = new T.InstancedMesh(new T.ConeGeometry(0.12, 0.55, 5), birdMat, 3);
+  const birdWingGeom = new T.PlaneGeometry(0.42, 0.22);
+  birdWingGeom.translate(0.21, 0, 0);
+  const birdWings = new T.InstancedMesh(birdWingGeom, birdMat, 6);
+  birdBodies.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  birdWings.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  const birdScratch = new T.Matrix4();
+  root.add(birdBodies, birdWings);
+
   for (let i = 0; i < 3; i++) {
     const birdGroup = new T.Group();
-    // Body
-    const birdBody = new T.Mesh(new T.ConeGeometry(0.12, 0.55, 5), birdMat);
-    birdBody.rotation.x = Math.PI / 2;
-    birdGroup.add(birdBody);
-
-    // Wings
-    const birdWingGeom = new T.PlaneGeometry(0.42, 0.22);
-    birdWingGeom.translate(0.21, 0, 0);
-
-    const bLeftWing = new T.Mesh(birdWingGeom, birdMat);
-    bLeftWing.position.set(-0.04, 0, 0);
-
-    const bRightWing = new T.Mesh(birdWingGeom.clone(), birdMat);
-    bRightWing.position.set(0.04, 0, 0);
-    bRightWing.rotation.y = Math.PI;
-
-    birdGroup.add(bLeftWing, bRightWing);
     root.add(birdGroup);
 
     celestialBirds.push({
       group: birdGroup,
-      leftWing: bLeftWing,
-      rightWing: bRightWing,
       orbitRadius: 18 + i * 5,
       altitude: 10.5 + i * 2.2,
       speed: 0.28 + i * 0.06,
@@ -346,8 +355,7 @@ export function createFaunaMeshGroup(scene: T.Scene) {
         b.group.position.set(pos.x, pos.y + elevation, pos.z);
 
         const wingFlap = calculateButterflyWingFlap(time, 14 + i * 2);
-        b.leftWing.rotation.y = wingFlap;
-        b.rightWing.rotation.y = Math.PI - wingFlap;
+        b.flap(wingFlap);
       }
 
       // Animate spirit deer
@@ -369,13 +377,25 @@ export function createFaunaMeshGroup(scene: T.Scene) {
         const pos = calculateCelestialBirdPosition({ x: 0, y: 0, z: 0 }, birdAng, cb.orbitRadius, cb.altitude, bob);
         cb.group.position.set(pos.x, pos.y, pos.z);
         cb.group.rotation.y = -birdAng + Math.PI / 2;
+        cb.group.updateMatrix();
 
-        if (!reducedMotion) {
-          const birdFlap = Math.sin(time * 5.5 + i) * 0.38;
-          cb.leftWing.rotation.z = birdFlap;
-          cb.rightWing.rotation.z = -birdFlap;
-        }
+        const birdFlap = reducedMotion ? 0 : Math.sin(time * 5.5 + i) * 0.38;
+        dummy.position.set(0, 0, 0);
+        dummy.rotation.set(Math.PI / 2, 0, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        birdBodies.setMatrixAt(i, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
+        dummy.position.set(-0.04, 0, 0);
+        dummy.rotation.set(0, 0, birdFlap);
+        dummy.updateMatrix();
+        birdWings.setMatrixAt(i * 2, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
+        dummy.position.set(0.04, 0, 0);
+        dummy.rotation.set(0, Math.PI, -birdFlap);
+        dummy.updateMatrix();
+        birdWings.setMatrixAt(i * 2 + 1, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
       }
+      birdBodies.instanceMatrix.needsUpdate = true;
+      birdWings.instanceMatrix.needsUpdate = true;
 
       // Animate luminous pond fish
       for (let i = 0; i < pondFish.length; i++) {

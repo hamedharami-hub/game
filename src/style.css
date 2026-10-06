@@ -4,7 +4,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink: #263c33;
-  --muted: #65776a;
+  --muted: #4d6153;
   --forest: #315847;
   --forest-deep: #244538;
   --leaf: #dbe9d5;
@@ -12,7 +12,11 @@
   --glass: rgb(255 250 240 / 88%);
   --glass-border: rgb(255 255 255 / 80%);
   --shadow: 0 18px 50px rgb(30 53 43 / 17%), 0 3px 10px rgb(30 53 43 / 9%);
-  --focus: #9b6e2d;
+  /* Two-tone focus indicator: each tone covers the luminance range the other cannot
+     (light tone >= 3:1 on backdrops darker than 0.28, dark tone >= 3:1 on backdrops
+     lighter than 0.18), so one tone always clears WCAG 2.2 non-text contrast 3:1. */
+  --focus-ring: #fff8e6;
+  --focus-halo: #1b3327;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
 }
@@ -38,7 +42,7 @@ body {
 button, input, select { font: inherit; }
 
 button {
-  min-height: 42px;
+  min-height: 44px;
   padding: 9px 14px;
   border: 1px solid rgb(70 98 76 / 14%);
   border-radius: 15px;
@@ -60,9 +64,13 @@ button:hover:not(:disabled) {
 
 button:active:not(:disabled) { transform: translateY(0) scale(.98); }
 button:disabled { opacity: .48; cursor: not-allowed; }
-button:focus-visible, [tabindex]:focus-visible {
-  outline: 3px solid var(--focus);
+/* `!important` keeps the dark halo on top of higher-specificity decorative shadows
+   (`#interact`, `button:hover:not(:disabled)`, pressed garden cells), so the two-tone
+   indicator is never half-applied. */
+button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--focus-halo) !important;
 }
 
 #world {
@@ -99,10 +107,12 @@ main::before {
   backdrop-filter: blur(18px) saturate(1.2);
 }
 
+/* Structural HUD wrapper only. It must not set `inset`: the header's own offsets
+   (`header { top/right/left }` plus `--safe-top`) are lower specificity and were
+   being overridden, leaving the header as a full-viewport box pinned at 0/0. */
 .hud {
   position: fixed;
   z-index: 3;
-  inset: 0;
   pointer-events: none;
 }
 
@@ -143,9 +153,9 @@ header {
 }
 
 .brand > span { display: flex; flex-direction: column; gap: 2px; }
-.brand small { color: rgb(255 250 235 / 76%); font-size: 10px; font-weight: 500; }
+.brand small { color: rgb(255 250 235 / 76%); font-size: 12px; font-weight: 500; }
 
-.action-bar, .header-actions {
+.action-bar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -154,7 +164,7 @@ header {
   pointer-events: auto;
 }
 
-.action-bar button, .header-actions button, #camera-view {
+.action-bar button, #camera-view {
   min-width: 46px;
   min-height: 46px;
   padding: 9px 14px;
@@ -163,7 +173,7 @@ header {
   font-weight: 650;
 }
 
-.action-bar button[aria-pressed="true"], .header-actions button[aria-pressed="true"] {
+.action-bar button[aria-pressed="true"] {
   color: #fffdf5;
   border-color: rgb(255 255 255 / 32%);
   background: var(--forest);
@@ -190,7 +200,7 @@ header {
   background: rgba(145, 205, 179, 0.35);
   border-color: rgba(255, 255, 255, 0.45);
   font-weight: 700;
-  transition: all 0.18s ease;
+  transition: background-color 180ms ease, transform 180ms ease;
 }
 #flight-ascend-btn:active, #flight-descend-btn:active {
   transform: scale(0.94);
@@ -303,10 +313,10 @@ footer > * { pointer-events: auto; }
 .dialog p, .dialog-body { color: #54695a; font-size: 14px; line-height: 1.8; }
 .appearance-options { display: grid; gap: 12px; }
 .appearance-character { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink); font-weight: 650; }
-.appearance-character select { min-height: 42px; min-width: 150px; padding: 7px 10px; border: 1px solid #ced9ca; border-radius: 12px; color: var(--ink); background: #fffdf8; }
+.appearance-character select { min-height: 44px; min-width: 150px; padding: 7px 10px; border: 1px solid #ced9ca; border-radius: 12px; color: var(--ink); background: #fffdf8; }
 .appearance-options fieldset { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 10px; border: 1px solid #d8dfd2; border-radius: 15px; }
 .appearance-options legend { padding-inline: 5px; color: var(--muted); font-size: 12px; font-weight: 650; }
-.appearance-options button { flex: 1 1 82px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
+.appearance-options button { flex: 1 1 82px; min-height: 44px; padding: 7px 10px; font-size: 12px; }
 .appearance-options button[aria-pressed="true"] { color: #fffdf5; border-color: transparent; background: var(--forest); }
 .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 19px; }
 .actions button { flex: 1 1 140px; min-width: 0; }
@@ -353,28 +363,29 @@ footer > * { pointer-events: auto; }
 .garden-panel[hidden] { display: none; }
 .garden-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .garden-heading h2, .garden-heading h3 { margin: 0; font-size: 17px; }
-.garden-heading button { min-height: 38px; padding: 7px 11px; }
+.garden-heading button { min-height: 44px; padding: 7px 11px; }
 .garden-tools { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0; }
-.garden-tools button { min-height: 40px; padding: 8px 11px; font-size: 12px; }
+.garden-tools button { min-height: 44px; padding: 8px 11px; font-size: 12px; }
 .garden-seed { display: inline-block; width: 11px; height: 11px; margin-inline-end: 5px; border: 2px solid rgb(255 255 255 / 85%); border-radius: 50%; background: var(--seed-color); box-shadow: 0 1px 4px rgb(30 53 43 / 18%); vertical-align: -1px; }
 .garden-tools button[aria-pressed="true"] {
   color: #fffdf6;
   border-color: transparent;
   background: var(--forest);
 }
-.plant-info { min-height: 22px; color: #536c59; font-size: 12px; line-height: 1.6; }
-.garden-notice { color: #66796b; font-size: 11px; line-height: 1.65; }
-.garden-notice { margin-top: 8px; color: var(--forest); }
+/* 12px muted text on 88%-opaque glass over a live scene: --muted is tuned so the
+   worst possible backdrop (glass over pure black) still clears 4.5:1. */
+.plant-info { min-height: 22px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.garden-notice { margin-top: 8px; color: var(--forest); font-size: 11px; line-height: 1.65; }
 .garden-panel details { margin-top: 12px; }
 .garden-panel summary { cursor: pointer; font-size: 12px; font-weight: 650; }
 .garden-grid { display: grid; gap: 5px; margin-top: 10px; direction: ltr; }
-.garden-grid button { min-width: 0; min-height: 38px; padding: 6px; border-radius: 12px; background: #e8e7d3; }
+.garden-grid button { min-width: 0; min-height: 44px; padding: 6px; border-radius: 12px; background: #e8e7d3; }
 .garden-grid button:hover:not(:disabled) { background: #d7e4c9; }
 .garden-grid button[aria-pressed="true"] { border-color: #315847; box-shadow: inset 0 0 0 2px #315847; }
 .garden-actions { display: flex; gap: 8px; margin-top: 10px; }
 .garden-actions button { flex: 1; min-width: 0; }
 .garden-actions #garden-design { color: #fffdf5; background: linear-gradient(135deg, #537d58, #315847); }
-.garden-panel summary { min-height: 42px; display: flex; align-items: center; }
+.garden-panel summary { min-height: 44px; display: flex; align-items: center; }
 
 @media (max-width: 760px) {
   header {
@@ -387,20 +398,20 @@ footer > * { pointer-events: auto; }
 
   .brand { min-height: 40px; gap: 7px; padding: 7px 10px; border-radius: 15px; font-size: 12px; }
   .brand small { display: none; }
-  .action-bar, .header-actions { gap: 5px; }
+  .action-bar { gap: 5px; }
   .action-bar { flex: 0 1 auto; }
-  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn {
-    min-width: 42px;
-    min-height: 42px;
+  .action-bar button, #camera-view, #flight-toggle-btn {
+    min-width: 44px;
+    min-height: 44px;
     padding: 7px 9px;
     border-radius: 14px;
     font-size: 11px;
   }
 
-  #ambient-status { top: calc(62px + var(--safe-top)); min-height: 30px; padding: 5px 11px; font-size: 11px; }
+  #ambient-status { top: calc(62px + var(--safe-top)); min-height: 30px; padding: 5px 11px; font-size: 12px; }
   #interact { bottom: calc(89px + var(--safe-bottom)); min-height: 46px; font-size: 13px; }
   footer { right: 8px; bottom: calc(9px + var(--safe-bottom)); left: 8px; }
-  footer button { min-height: 42px; padding: 8px 11px; font-size: 12px; }
+  footer button { min-height: 44px; padding: 8px 11px; font-size: 12px; }
   .garden-panel { right: 9px; bottom: calc(9px + var(--safe-bottom)); left: 9px; width: auto; max-height: min(61dvh, 570px); padding: 14px; border-radius: 21px; }
   .garden-heading button { min-height: 44px; padding-inline: 13px; }
   .garden-tools { gap: 7px; margin: 10px 0; }
@@ -409,7 +420,7 @@ footer > * { pointer-events: auto; }
   .garden-actions button { min-height: 46px; }
   .garden-panel summary { min-height: 44px; }
   .garden-grid { gap: 4px; }
-  .garden-grid button { min-height: 40px; padding: 4px 2px; }
+  .garden-grid button { min-height: 44px; padding: 4px 2px; }
   .dialog { padding: 19px; border-radius: 23px; }
   .dialog p, .dialog-body { font-size: 13px; }
   .actions { gap: 7px; margin-top: 15px; }
@@ -421,23 +432,25 @@ footer > * { pointer-events: auto; }
   .brand { width: 40px; min-width: 40px; min-height: 39px; padding: 6px 0; justify-content: center; flex: 0 0 auto; }
   .brand > span:not(.brand-mark) { display: none; }
   .brand-mark { margin: 0; }
-  .action-bar, .header-actions { gap: 4px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
-  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn { min-width: 0; min-height: 42px; padding: 6px 6px; font-size: 10px; white-space: nowrap; flex: 0 1 auto; }
+  .action-bar { gap: 4px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
+  /* Widths stay shrinkable here: flight mode exposes eight controls, and 8x44px + gaps
+     cannot fit a 390px header, so only the 44px height is guaranteed at this breakpoint. */
+  .action-bar button, #camera-view, #flight-toggle-btn { min-width: 0; min-height: 44px; padding: 6px 6px; font-size: 10px; white-space: nowrap; flex: 0 1 auto; }
   .action-bar { flex: 1 1 auto; }
   .companion-actions {
     grid-template-columns: repeat(2, 1fr);
     gap: 6px;
   }
   .companion-actions button {
-    min-height: 42px;
+    min-height: 44px;
     padding: 6px 4px;
     font-size: 11px;
   }
-  #ambient-status { top: calc(57px + var(--safe-top)); max-width: calc(100vw - 24px); font-size: 10px; }
+  #ambient-status { top: calc(57px + var(--safe-top)); max-width: calc(100vw - 24px); font-size: 12px; }
   #interact { bottom: calc(84px + var(--safe-bottom)); min-width: 164px; max-width: calc(100vw - 26px); padding: 10px 15px; }
   .garden-panel { max-height: min(64dvh, 560px); }
   .garden-grid { gap: 3px; }
-  .garden-grid button { min-height: 38px; padding-inline: 1px; }
+  .garden-grid button { min-height: 44px; padding-inline: 1px; }
   .dialog { max-height: 88dvh; }
 }
 
@@ -445,8 +458,8 @@ footer > * { pointer-events: auto; }
   header { align-items: flex-start; }
   .brand { width: 40px; justify-content: center; }
   .brand > span:not(.brand-mark) { display: none; }
-  .action-bar, .header-actions { justify-content: space-between; }
-  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn { padding-inline: 5px; font-size: 9px; }
+  .action-bar { justify-content: space-between; }
+  .action-bar button, #camera-view, #flight-toggle-btn { padding-inline: 5px; font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

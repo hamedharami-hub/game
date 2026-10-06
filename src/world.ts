@@ -80,6 +80,7 @@ export function createWorld(scene: T.Scene) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     parent.add(mesh);
+    if (collecting) batch.push(mesh);
     return mesh;
   };
   const box = (color: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent?: T.Object3D) =>
@@ -88,6 +89,119 @@ export function createWorld(scene: T.Scene) {
     shape(geometries.sphere, color, x, y, z, r, r, r, parent, glow);
   const pillar = (color: string, x: number, y: number, z: number, r: number, h: number, parent?: T.Object3D) =>
     shape(geometries.cylinder, color, x, y, z, r, h, r, parent);
+
+  // -- static batching -----------------------------------------------------
+  // The landscape is built from hundreds of small one-off meshes that never move.
+  // While `collecting` they are merely recorded; once the world is complete they
+  // are baked into a handful of vertex-coloured meshes, so a pebble no longer
+  // costs a draw call. Anything animated is `drop`ped and stays a real mesh.
+  const batch: T.Mesh[] = [];
+  let collecting = true;
+  const villagerMaterial = new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.86 });
+  const drop = (...meshes: (T.Object3D | null | undefined)[]) => {
+    for (const mesh of meshes) {
+      const at = batch.indexOf(mesh as T.Mesh);
+      if (at >= 0) batch.splice(at, 1);
+    }
+  };
+  const bake = (meshes: T.Mesh[], target: T.Object3D, material: T.Material, vertexColors: boolean) => {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const toLocal = new T.Matrix4();
+    const local = new T.Matrix4();
+    const normalMatrix = new T.Matrix3();
+    const v = new T.Vector3();
+    const n = new T.Vector3();
+    const tint = new T.Color();
+    target.updateWorldMatrix(true, false);
+    if (target !== scene) toLocal.copy(target.matrixWorld).invert();
+    for (const mesh of meshes) {
+      const geometry = mesh.geometry;
+      const position = geometry.getAttribute('position') as T.BufferAttribute | undefined;
+      if (!position) continue;
+      mesh.updateWorldMatrix(true, false);
+      local.multiplyMatrices(toLocal, mesh.matrixWorld);
+      normalMatrix.getNormalMatrix(local);
+      tint.copy((mesh.material as T.MeshStandardMaterial).color);
+      const normal = geometry.getAttribute('normal') as T.BufferAttribute | undefined;
+      const base = positions.length / 3;
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(local);
+        positions.push(v.x, v.y, v.z);
+        if (normal) {
+          n.fromBufferAttribute(normal, i).applyMatrix3(normalMatrix);
+          if (n.lengthSq() > 0) n.normalize();
+          normals.push(n.x, n.y, n.z);
+        }
+        colors.push(tint.r, tint.g, tint.b);
+      }
+      const index = geometry.getIndex();
+      if (index) for (let i = 0; i < index.count; i++) indices.push(base + index.getX(i));
+      else for (let i = 0; i < position.count; i++) indices.push(base + i);
+    }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    if (normals.length) geometry.setAttribute('normal', new T.Float32BufferAttribute(normals, 3));
+    if (vertexColors) geometry.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
+    geometry.setIndex(indices);
+    geometry.computeBoundingSphere();
+    const merged = new T.Mesh(geometry, material);
+    target.add(merged);
+    return merged;
+  };
+  const flushStatic = () => {
+    collecting = false;
+    scene.updateMatrixWorld(true);
+    const buckets = new Map<string, { meshes: T.Mesh[]; material: T.Material; vertexColors: boolean }>();
+    for (const mesh of batch) {
+      if (!mesh.parent) continue;
+      const source = mesh.material as T.MeshStandardMaterial;
+      // MeshStandardMaterial defaults emissiveIntensity to 1 even with a black
+      // emissive, so "glows" must be detected from the emissive colour itself.
+      if (source.type !== 'MeshStandardMaterial') continue;
+      const glow = source.emissive.r > 0 || source.emissive.g > 0 || source.emissive.b > 0;
+      const key = [
+        source.type, glow ? source.color.getHexString() : 'vertex-colour',
+        source.roughness, source.metalness, source.transparent, source.opacity, source.depthWrite,
+        source.side, source.flatShading,
+        glow ? `${source.emissive.getHexString()}:${source.emissiveIntensity}` : 'no-emissive',
+        mesh.castShadow, mesh.receiveShadow,
+      ].join('|');
+      const bucket = buckets.get(key);
+      if (bucket) {
+        bucket.meshes.push(mesh);
+        continue;
+      }
+      buckets.set(key, { meshes: [mesh], material: mesh.material as T.Material, vertexColors: !glow });
+    }
+    for (const bucket of buckets.values()) {
+      const source = bucket.material as T.MeshStandardMaterial;
+      const shared = bucket.meshes[0];
+      const material = bucket.vertexColors
+        ? new T.MeshStandardMaterial({
+          color: '#ffffff', vertexColors: true, roughness: source.roughness, metalness: source.metalness,
+          transparent: source.transparent, opacity: source.opacity, depthWrite: source.depthWrite,
+          side: source.side, flatShading: source.flatShading,
+        })
+        : bucket.material;
+      const merged = bake(bucket.meshes, scene, material, bucket.vertexColors);
+      merged.castShadow = shared.castShadow;
+      merged.receiveShadow = shared.receiveShadow;
+      for (const mesh of bucket.meshes) mesh.removeFromParent();
+    }
+    batch.length = 0;
+    // Villagers travel as one rigid body each, so each villager is baked on its own.
+    for (const resident of residentRoots) {
+      const parts = resident.children.filter((child): child is T.Mesh => (child as T.Mesh).isMesh);
+      if (!parts.length) continue;
+      const merged = bake(parts, resident, villagerMaterial, true);
+      merged.castShadow = true;
+      merged.receiveShadow = true;
+      for (const part of parts) part.removeFromParent();
+    }
+  };
 
   const roots = {} as Record<District, T.Group>;
   for (const [id, place] of Object.entries(districts) as [District, typeof districts[District]][]) {
@@ -108,6 +222,7 @@ export function createWorld(scene: T.Scene) {
   ocean.position.y = -2.2;
   ocean.receiveShadow = true;
   scene.add(ocean);
+  batch.push(ocean);
   const groundMaterial = material('#779761');
   const groundGeom = new T.CylinderGeometry(87, 88, 0.92, 144, 16);
   const posAttr = groundGeom.getAttribute('position') as T.BufferAttribute;
@@ -127,6 +242,7 @@ export function createWorld(scene: T.Scene) {
   ground.position.y = -0.48;
   ground.receiveShadow = true;
   scene.add(ground);
+  batch.push(ground);
   const shore = shape(new T.TorusGeometry(85.6, 1.75, 8, 144), '#d7b16f', 0, 0.025, 0, 1, 1, 1, scene);
   shore.rotation.x = Math.PI / 2;
 
@@ -182,6 +298,7 @@ export function createWorld(scene: T.Scene) {
     const path = new T.Mesh(ribbonGeometry(points, 2.45, 0.03), pathMaterial);
     path.receiveShadow = true;
     scene.add(path);
+    batch.push(edging, path);
   }
 
   // Soft clearings mark places without walls or teleport pads.
@@ -192,6 +309,7 @@ export function createWorld(scene: T.Scene) {
     clearing.scale.set(1.05, 0.84, 1);
     clearing.receiveShadow = true;
     scene.add(clearing);
+    batch.push(clearing);
   }
 
   // Flower meadows and tree belts are batched so the larger landscape stays light.
@@ -283,6 +401,7 @@ export function createWorld(scene: T.Scene) {
   const pond = new T.Mesh(new T.CylinderGeometry(5.7, 6.2, 0.22, 48), material('#d1c29c'));
   pond.position.set(0, 0.1, 0);
   commons.add(pond);
+  batch.push(pond);
   const water = new T.Mesh(new T.CircleGeometry(5.25, 48), material('#8bd5cd'));
   water.rotation.x = -Math.PI / 2;
   water.position.y = 0.23;
@@ -359,6 +478,7 @@ export function createWorld(scene: T.Scene) {
   for (const x of [-1.65, 1.65]) {
     const window = box('#edd5a0', x, 1.85, 2.15, 0.9, 0.82, 0.12, home);
     window.material = windowGlowMaterial;
+    drop(window);
     box('#d8b56f', x, 1.34, 2.22, 1.18, 0.16, 0.35, home);
   }
   for (const x of [-2, 2]) pillar('#e8d4b5', x, 1.5, 3.4, 0.12, 3, home);
@@ -409,6 +529,7 @@ export function createWorld(scene: T.Scene) {
     resident.userData.origin = new T.Vector3(x, 0, z);
     resident.userData.phase = random() * Math.PI * 2;
     residentRoots.push(resident);
+    drop(...resident.children);
   };
   for (let i = 0; i < 7; i++) {
     const angle = i * Math.PI * 2 / 7;
@@ -425,6 +546,7 @@ export function createWorld(scene: T.Scene) {
   const banks = new T.Mesh(new T.TubeGeometry(streamCurve, 42, 1.06, 8, false), material('#c6b891'));
   const stream = new T.Mesh(new T.TubeGeometry(streamCurve, 42, 0.78, 8, false), material('#8bd5cd'));
   grove.add(banks, stream);
+  batch.push(banks, stream);
   const streamRipples: T.Mesh[] = [];
   for (let i = 0; i < 4; i++) {
     const point = streamCurve.getPoint(0.17 + i * 0.2);
@@ -475,6 +597,7 @@ export function createWorld(scene: T.Scene) {
     const mesh = orb(color, x, y, z, 0.075, parent, true);
     mesh.material = (mesh.material as T.MeshStandardMaterial).clone();
     mesh.castShadow = false;
+    drop(mesh);
     discoveryMotes.push({ mesh, center: new T.Vector3(x, y, z), phase, radius });
   };
 
@@ -517,10 +640,10 @@ export function createWorld(scene: T.Scene) {
     new T.Vector3(2.8, 0.035, -1.4), new T.Vector3(4.6, 0.035, -2.7),
     new T.Vector3(5.8, 0.035, -4.5), new T.Vector3(7.15, 0.035, -6.15),
   ]);
-  grove.add(
-    new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.72, 8, false), material('#bdb18e')),
-    new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.48, 8, false), material('#8bd5cd')),
-  );
+  const inletBank = new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.72, 8, false), material('#bdb18e'));
+  const inletWater = new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.48, 8, false), material('#8bd5cd'));
+  grove.add(inletBank, inletWater);
+  batch.push(inletBank, inletWater);
   const poolView = new T.Group();
   poolView.name = 'hidden-stream-viewpoint';
   poolView.position.set(7.55, 0, -6.55);
@@ -528,6 +651,7 @@ export function createWorld(scene: T.Scene) {
   const poolBank = new T.Mesh(new T.CylinderGeometry(2.35, 2.75, 0.28, 36), material('#c8ba99'));
   poolBank.position.y = 0.08;
   poolView.add(poolBank);
+  batch.push(poolBank);
   const stillWater = new T.Mesh(new T.CircleGeometry(2.2, 36), material('#83d0c8'));
   stillWater.rotation.x = -Math.PI / 2;
   stillWater.position.y = 0.23;
@@ -535,6 +659,7 @@ export function createWorld(scene: T.Scene) {
   const poolShimmer = shape(geometries.torus, '#d9f5dd', 0, 0.28, 0, 1, 1, 1, poolView, true);
   poolShimmer.rotation.x = Math.PI / 2;
   poolShimmer.scale.set(1.85, 1.85, 1.85);
+  drop(poolShimmer);
   for (let i = 0; i < 4; i++) {
     const angle = i * Math.PI / 2 + 0.35;
     const lily = orb(i % 2 ? '#8cbb91' : '#aacb91', Math.cos(angle) * 1.22, 0.29, Math.sin(angle) * 1.22, 0.34, poolView);
@@ -565,6 +690,7 @@ export function createWorld(scene: T.Scene) {
   circle.rotation.x = -Math.PI / 2;
   circle.position.y = 0.02;
   sanctuary.add(circle);
+  batch.push(circle);
   const ring = shape(geometries.torus, '#dfc78e', 0, 0.18, 0, 5.2, 0.78, 5.2, sanctuary);
   ring.rotation.x = Math.PI / 2;
   pillar('#d3c29f', 0, 0.3, 0, 1.35, 0.48, sanctuary);
@@ -582,6 +708,7 @@ export function createWorld(scene: T.Scene) {
   }
 
   // Local decorations persist in their chosen clearing and are rebuilt only on edits.
+  flushStatic();
   const furnishings: Record<Furnishing, string> = {
     crystal: '#b9d7d1', arbor: '#d7bd89', pool: '#8bd5cd', pavilion: '#c4afd6',
   };

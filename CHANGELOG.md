@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Draw calls, delivery and accessibility
+- Cut draw calls per rendered frame from 397 to 65 on desktop and 232 to 41 on mobile. The garden soil grid alone was 144 draw calls in every frame, and each flower cost about ten more, so a full garden cost roughly 1,996; it now costs 72 and is flat in plant count. The soil grid is one instanced mesh, per-plant parts are instanced batches, the static world is merged into vertex-coloured batches, and fauna is consolidated. Rendered world pixels are unchanged to within noise (0.001% of pixels differ by more than 24).
+- Made `dist/` an installable offline PWA with a web app manifest, a hand-written service worker, an SVG icon, Open Graph tags and a `<noscript>` fallback — with no new dependency and no build-config change. The single-file `release/play.html` remains the offline guarantee and was left untouched.
+- Fixed a service-worker defect that made offline boot fail silently: the worker could not match its own cached bundle on hosts answering `Vary: Origin`, so it served a 503 for a file it was holding, and the app booted to a blank page. Cache lookups now ignore `Vary`.
+- Added a dependency-free budget gate to `npm run build` and CI that fails when the enforced test count falls below 115, the bundle or deploy weight regresses, a `.png` reappears under `dist/art/`, or the standalone HTML stops being self-contained. It parses the runner's own summary, so an unwired test file can no longer make CI quieter.
+- Fixed a layout defect where `.hud { inset: 0 }` outranked every bare `header` rule, making the header a full-viewport box: its offsets and the safe-area top inset never applied. Also raised the focus ring from 1.0–1.18:1 to 3.55–4.00:1 against the live scene, lifted mobile touch targets from 42px to 44px, raised two text colours above 4.5:1, and removed dead CSS.
+- No gameplay, save format, artwork or offline behaviour changed.
+
+## Unreleased — Performance and validation hardening
+- Bounded the character-atlas cache: an unbounded map could retain 36 sheets of 1774×887 RGBA (~6.3 MB each) after a full look sweep; it is now an LRU capped at six entries, and eviction never touches a sheet a live actor is still drawing with.
+- Fixed texture uploads through stale GPU objects: reassigning a texture's source without disposing it first left three.js uploading new sheets through the old GL texture. That produced `GL_INVALID_OPERATION: glTexStorage2D: Texture is immutable` and could throw on the next disposal. Every source swap now disposes first, which removed the GL errors and cut a 24-look sweep from 56 uploads / 352 MB to 25 uploads / 157 MB.
+- Stopped re-uploading full atlas sheets on every save when nothing about the appearance had changed.
+- Set texture anisotropy so the 2.5D billboards stay sharp at the grazing angles of the isometric camera.
+- Excluded the four owner-approved provenance originals from the deployed build output: they are still kept and sha256-verified in the repository, but they were being copied into every deployment despite no runtime code path requesting them. `dist/` drops from 35.9 MB to 26.7 MB.
+- Wired the 16 previously unaccounted assertions in `tests/empirical-challenge.test.ts` into `npm test` (99 enforced assertions become 115) and stopped Playwright from collecting `*.test.ts` files outside its accounting.
+- Extended `tsc` coverage from 2 files to 29, so all tests and both config files are type-checked; two real type errors were fixed without suppressions.
+- No gameplay, save format, artwork or offline behaviour changed.
+
 ## v0.4.0 — One world, fresh moments
 - Made garden layout produce clear, deterministic visual reactions: moonflower and starlily halos, butterflies near mixed blooms, and a warmer bed with greater flowering diversity.
 - Added short companion moments around fresh blooms and new garden builds; manual movement and visits remain in control.

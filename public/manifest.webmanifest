@@ -1,0 +1,29 @@
+{
+  "id": "/",
+  "name": "کاروان رؤیاها · باغ خاموش",
+  "short_name": "کاروان رؤیاها",
+  "description": "باغ آرام سرزمین دوشاخ‌ها: کاشتن گل، چیدمان باغ و همراهی فرشته و گوراستاخ — بدون حساب کاربری و بدون نیاز به شبکه پس از نخستین بازدید.",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#a4cfb6",
+  "theme_color": "#a4cfb6",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

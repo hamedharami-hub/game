@@ -1,9 +1,17 @@
 import * as T from 'three';
 import { cellUnlocked, gridSize, growthStage, harvest, plantAt, species, type Plant, type Species, type State } from './state';
 
-type GardenCell = T.Mesh<T.CircleGeometry, T.MeshStandardMaterial> & { userData: { cell: { col: number; row: number } } };
+type Cell = { col: number; row: number; sx: number; sz: number; color: string };
 type BloomParticle = { mesh: T.Mesh; velocity: T.Vector3; bornAt: number };
-type Pollinator = { group: T.Group; x: number; z: number; phase: number; radius: number };
+type Part = { owner: Owner; set: PartSet; local: T.Matrix4; color: T.Color; slot: number };
+type PartSet = { geometry: T.BufferGeometry; material: T.Material; parts: Part[]; mesh: T.InstancedMesh | null };
+type Owner = {
+  kind: 'plant' | 'reaction' | 'pollinator';
+  matrix: T.Matrix4;
+  parts: Part[];
+  live: boolean;
+  apply: (now: number) => void;
+};
 
 const SOIL_COLORS = ['#809d69', '#86a36e', '#789562', '#8aa873'];
 const LEAF_COLORS = ['#639c70', '#75a96e', '#80ad73'];
@@ -21,21 +29,17 @@ export function createGarden(
   root.name = 'planting-garden';
   scene.add(root);
 
-  const plantRoot = new T.Group();
-  root.add(plantRoot);
-  const reactionRoot = new T.Group();
-  reactionRoot.name = 'garden-reactions';
-  root.add(reactionRoot);
-  const cells: GardenCell[] = [];
-  const plantsById = new Map<string, T.Group>();
+  const cells: Cell[] = [];
+  const visibleCells: Cell[] = [];
   const particles: BloomParticle[] = [];
-  const pollinators: Pollinator[] = [];
+  const plantPositions = new Map<string, T.Vector3>();
   let editing = false;
   let kind: Species = 'moonflower';
   let selected: string | null = null;
   let lastTick = 0;
   let stageSignature = '';
   let reactionSignature = '';
+  let cellSignature = '';
   const baseBedColor = new T.Color('#76915e');
   const targetBedColor = baseBedColor.clone();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -57,7 +61,6 @@ export function createGarden(
     plotRim: new T.TorusGeometry(8.22, .14, 7, 64),
   };
   const materials = new Map<string, T.MeshStandardMaterial>();
-  const reactionMaterials = new Map<string, T.MeshBasicMaterial>();
   const material = (color: string) => {
     let value = materials.get(color);
     if (!value) {
@@ -73,21 +76,42 @@ export function createGarden(
     parent.add(mesh);
     return mesh;
   };
-  const reactionMaterial = (color: string, opacity: number) => {
-    const key = `${color}:${opacity}`;
-    let value = reactionMaterials.get(key);
-    if (!value) {
-      value = new T.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, toneMapped: false });
-      reactionMaterials.set(key, value);
+
+  // Every repeated garden element (soil cells, plant parts, ground glows,
+  // pollinators) is one InstancedMesh per geometry with per-instance colour, so
+  // the planting bed costs a fixed handful of draw calls instead of one per cell
+  // or per petal.
+  const partMaterial = new T.MeshStandardMaterial({ color: '#ffffff', roughness: .74, metalness: 0, flatShading: true });
+  const glowMaterial = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .12, depthWrite: false, toneMapped: false });
+  const ringMaterial = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .44, depthWrite: false, toneMapped: false });
+  const wingMaterial = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .92, depthWrite: false, toneMapped: false });
+  const pollinatorBodyMaterial = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 1, depthWrite: false, toneMapped: false });
+
+  const sets: PartSet[] = [];
+  const owners: Owner[] = [];
+  const dummy = new T.Object3D();
+  const scratch = new T.Matrix4();
+  const unitScale = new T.Vector3();
+  const setFor = (geometry: T.BufferGeometry, materialOfSet: T.Material) => {
+    let set = sets.find(s => s.geometry === geometry && s.material === materialOfSet);
+    if (!set) {
+      set = { geometry, material: materialOfSet, parts: [], mesh: null };
+      sets.push(set);
     }
-    return value;
+    return set;
   };
-  const makeReaction = (geometry: T.BufferGeometry, color: string, opacity: number, parent: T.Object3D) => {
-    const mesh = new T.Mesh(geometry, reactionMaterial(color, opacity));
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    parent.add(mesh);
-    return mesh;
+  const newOwner = (kindOfOwner: Owner['kind'], live: boolean, apply: (now: number) => void) => {
+    const owner: Owner = { kind: kindOfOwner, matrix: new T.Matrix4(), parts: [], live, apply };
+    owners.push(owner);
+    return owner;
+  };
+  const hang = (owner: Owner, set: PartSet, color: string, place: (d: T.Object3D) => void) => {
+    dummy.position.set(0, 0, 0);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    place(dummy);
+    dummy.updateMatrix();
+    owner.parts.push({ owner, set, local: dummy.matrix.clone(), color: new T.Color(color), slot: -1 });
   };
 
   const panel = document.createElement('section');
@@ -114,13 +138,41 @@ export function createGarden(
 
   // Subtle ground cells keep planting targets easy to find without reading as a checkerboard.
   for (let row = -2; row < 10; row++) for (let col = -2; col < 10; col++) {
-    const cell = make(geometries.soil, SOIL_COLORS[Math.abs(col * 7 + row * 11) % SOIL_COLORS.length], root) as GardenCell;
-    cell.rotation.x = -Math.PI / 2;
-    cell.position.set(col - 3.5, .072, row - 3.5);
-    cell.scale.set(1 + ((col * 3 + row + 40) % 4) * .012, 1 + ((col + row * 5 + 40) % 4) * .012, 1);
-    cell.userData.cell = { col, row };
-    cells.push(cell);
+    cells.push({
+      col, row,
+      sx: 1 + ((col * 3 + row + 40) % 4) * .012,
+      sz: 1 + ((col + row * 5 + 40) % 4) * .012,
+      color: SOIL_COLORS[Math.abs(col * 7 + row * 11) % SOIL_COLORS.length],
+    });
   }
+  const cellMesh = new T.InstancedMesh(geometries.soil, partMaterial, cells.length);
+  cellMesh.name = 'garden-cells';
+  cellMesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  cellMesh.castShadow = false;
+  cellMesh.receiveShadow = false;
+  root.add(cellMesh);
+  const cellDummy = new T.Object3D();
+  const syncCells = (state: State) => {
+    const unlocked = cells.filter(cell => cellUnlocked(state.plotLevel, cell.col, cell.row));
+    const signature = `${state.plotLevel}:${unlocked.length}`;
+    if (signature === cellSignature) return;
+    cellSignature = signature;
+    visibleCells.length = 0;
+    visibleCells.push(...unlocked);
+    unlocked.forEach((cell, i) => {
+      cellDummy.position.set(cell.col - 3.5, .072, cell.row - 3.5);
+      cellDummy.rotation.set(-Math.PI / 2, 0, 0);
+      cellDummy.scale.set(cell.sx, cell.sz, 1);
+      cellDummy.updateMatrix();
+      cellMesh.setMatrixAt(i, cellDummy.matrix);
+      cellMesh.setColorAt(i, new T.Color(cell.color));
+    });
+    cellMesh.count = unlocked.length;
+    cellMesh.visible = unlocked.length > 0;
+    cellMesh.instanceMatrix.needsUpdate = true;
+    if (cellMesh.instanceColor) cellMesh.instanceColor.needsUpdate = true;
+    cellMesh.computeBoundingSphere();
+  };
 
   const selection = new T.Mesh(geometries.ring, material('#f4d585'));
   selection.rotation.x = -Math.PI / 2;
@@ -130,39 +182,48 @@ export function createGarden(
   root.add(selection);
 
   function removePlants() {
-    for (const child of [...plantRoot.children]) plantRoot.remove(child);
-    plantsById.clear();
+    for (let i = owners.length - 1; i >= 0; i--) if (owners[i].kind === 'plant') owners.splice(i, 1);
+    plantPositions.clear();
   }
 
   function clearReactions() {
-    for (const child of [...reactionRoot.children]) reactionRoot.remove(child);
-    pollinators.length = 0;
+    for (let i = owners.length - 1; i >= 0; i--) {
+      if (owners[i].kind === 'reaction' || owners[i].kind === 'pollinator') owners.splice(i, 1);
+    }
   }
 
   function addButterfly(x: number, z: number, phase: number, radius: number) {
-    const group = new T.Group();
-    group.name = 'garden-butterfly';
+    const owner = newOwner('pollinator', !reducedMotion, now => {
+      if (reducedMotion) {
+        owner.matrix.identity().setPosition(x, .68, z);
+        return;
+      }
+      const angle = now * .00048 + phase;
+      owner.matrix.makeRotationY(-angle);
+      owner.matrix.setPosition(
+        x + Math.cos(angle) * radius,
+        .68 + Math.sin(angle * 1.7) * .045,
+        z + Math.sin(angle) * radius * .72,
+      );
+    });
     for (const [side, color] of [[-1, '#f8d477'], [1, '#eaa6c6']] as const) {
-      const wing = makeReaction(geometries.butterflyWing, color, .92, group);
-      wing.position.set(side * .065, 0, 0);
-      wing.scale.set(.073, .105, .028);
-      wing.rotation.z = side * -.34;
+      hang(owner, setFor(geometries.butterflyWing, wingMaterial), color, d => {
+        d.position.set(side * .065, 0, 0);
+        d.scale.set(.073, .105, .028);
+        d.rotation.z = side * -.34;
+      });
     }
-    const body = makeReaction(geometries.butterflyBody, '#655b59', 1, group);
-    body.position.y = -.005;
-    group.position.set(x, .68, z);
-    reactionRoot.add(group);
-    pollinators.push({ group, x, z, phase, radius });
+    hang(owner, setFor(geometries.butterflyBody, pollinatorBodyMaterial), '#655b59', d => { d.position.y = -.005; });
   }
 
-  function updateGardenReactions(state: State, now: number) {
+  function updateGardenReactions(state: State, now: number, force = false) {
     // Seedlings do not trigger reactions; only visibly flowering plants count.
     const flowers = state.plants
       .filter(p => growthStage(p, now) >= 2)
       .slice()
       .sort((a, b) => a.row - b.row || a.col - b.col || a.species.localeCompare(b.species));
     const signature = flowers.map(p => `${p.species}:${p.col}:${p.row}`).join('|');
-    if (signature === reactionSignature) return;
+    if (!force && signature === reactionSignature) return;
     reactionSignature = signature;
     clearReactions();
 
@@ -178,13 +239,17 @@ export function createGarden(
       const x = p.col - 3.5;
       const z = p.row - 3.5;
       const color = p.species === 'moonflower' ? '#bda9ff' : '#f5a8c8';
-      const glow = makeReaction(geometries.glow, color, .12, reactionRoot);
-      glow.rotation.x = -Math.PI / 2;
-      glow.position.set(x, .081, z);
-      glow.scale.set(.86, .86, 1);
-      const ring = makeReaction(geometries.glowRing, color, .44, reactionRoot);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(x, .09, z);
+      const glow = newOwner('reaction', false, () => {});
+      hang(glow, setFor(geometries.glow, glowMaterial), color, d => {
+        d.rotation.x = -Math.PI / 2;
+        d.position.set(x, .081, z);
+        d.scale.set(.86, .86, 1);
+      });
+      const ring = newOwner('reaction', false, () => {});
+      hang(ring, setFor(geometries.glowRing, ringMaterial), color, d => {
+        d.rotation.x = -Math.PI / 2;
+        d.position.set(x, .09, z);
+      });
     }
 
     // Mixed-species pockets attract butterflies. Centers and phases come only from
@@ -205,46 +270,46 @@ export function createGarden(
     });
   }
 
-  function addLeaves(group: T.Group, p: Plant, y: number, scale = 1) {
-    for (const side of [-1, 1]) {
-      const leaf = make(geometries.leaf, leafColor(p, side + 1), group);
-      leaf.position.set(side * .13 * scale, y, 0);
-      leaf.scale.set(.22 * scale, .075 * scale, .12 * scale);
-      leaf.rotation.z = side * -.38;
-    }
-  }
-
-  function addStem(group: T.Group, height: number, color = '#588f66') {
-    const stem = make(geometries.stem, color, group);
-    stem.scale.y = height;
-    stem.position.y = height / 2;
-  }
-
   function renderPlant(p: Plant, now: number) {
-    const g = new T.Group();
-    g.name = `plant-${p.id}`;
-    g.position.set(p.col - 3.5, .11, p.row - 3.5);
-    g.userData = { id: p.id, sway: ((p.col * 7 + p.row * 11) % 9) * .18, bornAt: p.plantedAt };
-    plantRoot.add(g);
-    plantsById.set(p.id, g);
-
     const stage = growthStage(p, now);
     const color = flowerColor(p);
+    const x = p.col - 3.5;
+    const z = p.row - 3.5;
+    const sway = ((p.col * 7 + p.row * 11) % 9) * .18;
+    const owner = newOwner('plant', !reducedMotion, time => {
+      if (reducedMotion) {
+        owner.matrix.identity().setPosition(x, .11, z);
+        return;
+      }
+      owner.matrix.makeRotationZ(Math.sin(time * .0011 + sway) * .026);
+      const age = Math.max(0, Math.min(1, (time - p.plantedAt) / 550));
+      const pop = .72 + .28 * (1 - Math.pow(1 - age, 3));
+      const scale = pop * (1 + Math.sin(time * .0018 + sway) * .018);
+      owner.matrix.scale(unitScale.set(scale, scale, scale));
+      owner.matrix.setPosition(x, .11, z);
+    });
+    plantPositions.set(p.id, new T.Vector3(x, .11, z));
+    const part = (geometry: T.BufferGeometry, partColor: string, place: (d: T.Object3D) => void) =>
+      hang(owner, setFor(geometry, partMaterial), partColor, place);
+
     if (stage === 0) {
-      const seed = make(geometries.seed, '#ead3a0', g);
-      seed.position.y = .08;
-      seed.scale.set(.82, .52, .72);
+      part(geometries.seed, '#ead3a0', d => { d.position.y = .08; d.scale.set(.82, .52, .72); });
       return;
     }
 
     const height = stage === 1 ? .27 : stage === 2 ? .49 : .66;
-    addStem(g, height);
-    addLeaves(g, p, stage === 1 ? .12 : .17, stage === 1 ? .8 : 1);
+    part(geometries.stem, '#588f66', d => { d.scale.y = height; d.position.y = height / 2; });
+    const leafScale = stage === 1 ? .8 : 1;
+    for (const side of [-1, 1]) {
+      part(geometries.leaf, leafColor(p, side + 1), d => {
+        d.position.set(side * .13 * leafScale, stage === 1 ? .12 : .17, 0);
+        d.scale.set(.22 * leafScale, .075 * leafScale, .12 * leafScale);
+        d.rotation.z = side * -.38;
+      });
+    }
 
     if (stage === 1) {
-      const bud = make(geometries.core, color, g);
-      bud.position.y = height + .03;
-      bud.scale.set(.105, .13, .105);
+      part(geometries.core, color, d => { d.position.y = height + .03; d.scale.set(.105, .13, .105); });
       return;
     }
 
@@ -252,28 +317,83 @@ export function createGarden(
       const fronds = stage === 2 ? 4 : 6;
       for (let i = 0; i < fronds; i++) {
         const angle = i / fronds * Math.PI * 2 + .2;
-        const frond = make(geometries.leaf, color, g);
-        frond.position.set(Math.cos(angle) * .12, height * (.55 + (i % 3) * .1), Math.sin(angle) * .12);
-        frond.scale.set(.075, .3 + (i % 2) * .06, .09);
-        frond.rotation.z = Math.cos(angle) * .45;
-        frond.rotation.x = Math.sin(angle) * .38;
+        part(geometries.leaf, color, d => {
+          d.position.set(Math.cos(angle) * .12, height * (.55 + (i % 3) * .1), Math.sin(angle) * .12);
+          d.scale.set(.075, .3 + (i % 2) * .06, .09);
+          d.rotation.z = Math.cos(angle) * .45;
+          d.rotation.x = Math.sin(angle) * .38;
+        });
       }
     } else {
       const count = stage === 2 ? 4 : p.species === 'sunblossom' ? 7 : 6;
       const radius = stage === 2 ? .13 : p.species === 'sunblossom' ? .22 : .19;
       for (let i = 0; i < count; i++) {
         const angle = i / count * Math.PI * 2;
-        const petal = make(geometries.petal, color, g);
-        petal.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
-        petal.scale.set(stage === 2 ? .075 : .105, stage === 2 ? .1 : .17, .08);
-        petal.rotation.y = -angle;
-        petal.rotation.z = Math.cos(angle) * .15;
+        part(geometries.petal, color, d => {
+          d.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+          d.scale.set(stage === 2 ? .075 : .105, stage === 2 ? .1 : .17, .08);
+          d.rotation.y = -angle;
+          d.rotation.z = Math.cos(angle) * .15;
+        });
       }
       const centerColor = p.species === 'sunblossom' ? '#f8e09a' : '#fff0c4';
-      const center = make(geometries.core, centerColor, g);
-      center.position.y = height + .015;
-      center.scale.set(stage === 2 ? .08 : .105, .085, stage === 2 ? .08 : .105);
+      part(geometries.core, centerColor, d => {
+        d.position.y = height + .015;
+        d.scale.set(stage === 2 ? .08 : .105, .085, stage === 2 ? .08 : .105);
+      });
     }
+  }
+
+  /** Rebuilds every instanced batch from the owners that currently exist. */
+  function rebuildInstances(now: number) {
+    for (const set of sets) {
+      if (set.mesh) {
+        root.remove(set.mesh);
+        set.mesh.dispose();
+        set.mesh = null;
+      }
+      set.parts.length = 0;
+    }
+    for (const owner of owners) {
+      owner.apply(now);
+      for (const part of owner.parts) {
+        part.slot = part.set.parts.length;
+        part.set.parts.push(part);
+      }
+    }
+    for (const set of sets) {
+      const count = set.parts.length;
+      if (!count) continue;
+      const mesh = new T.InstancedMesh(set.geometry, set.material, count);
+      mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      for (let i = 0; i < count; i++) {
+        const part = set.parts[i];
+        mesh.setMatrixAt(i, scratch.multiplyMatrices(part.owner.matrix, part.local));
+        mesh.setColorAt(i, part.color);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      set.mesh = mesh;
+      root.add(mesh);
+    }
+  }
+
+  /** Refreshes the matrices of every animated batch (plants sway, pollinators drift). */
+  function refreshAnimatedInstances(now: number) {
+    for (const owner of owners) if (owner.live) owner.apply(now);
+    const dirty = new Set<PartSet>();
+    for (const owner of owners) {
+      if (!owner.live) continue;
+      for (const part of owner.parts) {
+        if (!part.set.mesh) continue;
+        part.set.mesh.setMatrixAt(part.slot, scratch.multiplyMatrices(owner.matrix, part.local));
+        dirty.add(part.set);
+      }
+    }
+    for (const set of dirty) if (set.mesh) set.mesh.instanceMatrix.needsUpdate = true;
   }
 
   function statusFor(p: Plant | undefined, now: number) {
@@ -285,14 +405,11 @@ export function createGarden(
 
   function redraw(now = Date.now()) {
     const state = getState();
-    for (const cell of cells) {
-      const { col, row } = cell.userData.cell;
-      const unlocked = cellUnlocked(state.plotLevel, col, row);
-      cell.visible = unlocked;
-    }
+    syncCells(state);
     removePlants();
     for (const p of state.plants) renderPlant(p, now);
-    updateGardenReactions(state, now);
+    updateGardenReactions(state, now, true);
+    rebuildInstances(now);
     const selectedPlant = state.plants.find(p => p.id === selected);
     selection.visible = !!selectedPlant;
     if (selectedPlant) selection.position.set(selectedPlant.col - 3.5, .13, selectedPlant.row - 3.5);
@@ -302,9 +419,8 @@ export function createGarden(
 
   function burstAt(p: Plant, now: number) {
     if (reducedMotion) return;
-    const group = plantsById.get(p.id);
-    if (!group) return;
-    const origin = group.position.clone();
+    const origin = plantPositions.get(p.id);
+    if (!origin) return;
     const color = flowerColor(p);
     const count = 9;
     for (let i = 0; i < count; i++) {
@@ -366,8 +482,8 @@ export function createGarden(
         <span class="garden-seed" aria-hidden="true" style="--seed-color:${spec.color}"></span>${spec.name}
       </button>`).join('');
     const gridSignature = state.plants.map(plant => `${plant.id}:${growthStage(plant, now)}:${plant.col}:${plant.row}`).join('|');
-    const cellsMarkup = cells.filter(cell => cellUnlocked(state.plotLevel, cell.userData.cell.col, cell.userData.cell.row)).map(cell => {
-      const { col, row } = cell.userData.cell;
+    const cellsMarkup = cells.filter(cell => cellUnlocked(state.plotLevel, cell.col, cell.row)).map(cell => {
+      const { col, row } = cell;
       const plant = state.plants.find(item => item.col === col && item.row === row);
       const label = plant ? `${species[plant.species].name} · ${['بذر', 'جوانه', 'بوته', 'شکوفه'][growthStage(plant, now)]}` : `خاک خالی ${row + 1}، ${col + 1}`;
       return `<button id="cell-${col}-${row}" data-col="${col}" data-row="${row}" aria-label="${label}" aria-pressed="${plant?.id === selected}">${plant ? '<span aria-hidden="true">✿</span>' : '<span aria-hidden="true">·</span>'}</button>`;
@@ -422,8 +538,8 @@ export function createGarden(
       const next = state.plants.map(plant => `${plant.id}:${growthStage(plant, now)}:${plant.col}:${plant.row}`).join('|');
       if (grid.dataset.signature !== next) {
         grid.dataset.signature = next;
-        grid.innerHTML = cells.filter(cell => cellUnlocked(state.plotLevel, cell.userData.cell.col, cell.userData.cell.row)).map(cell => {
-          const { col, row } = cell.userData.cell;
+        grid.innerHTML = cells.filter(cell => cellUnlocked(state.plotLevel, cell.col, cell.row)).map(cell => {
+          const { col, row } = cell;
           const plant = state.plants.find(item => item.col === col && item.row === row);
           const label = plant ? `${species[plant.species].name} · ${['بذر', 'جوانه', 'بوته', 'شکوفه'][growthStage(plant, now)]}` : `خاک خالی ${row + 1}، ${col + 1}`;
           return `<button id="cell-${col}-${row}" data-col="${col}" data-row="${row}" aria-label="${label}" aria-pressed="${plant?.id === selected}">${plant ? '<span aria-hidden="true">✿</span>' : '<span aria-hidden="true">·</span>'}</button>`;
@@ -462,23 +578,7 @@ export function createGarden(
     if (signature !== stageSignature) redraw(now);
 
     if (!reducedMotion) {
-      for (const plant of plantsById.values()) {
-        const sway = plant.userData.sway as number;
-        const bornAt = plant.userData.bornAt as number;
-        plant.rotation.z = Math.sin(now * .0011 + sway) * .026;
-        const age = Math.max(0, Math.min(1, (now - bornAt) / 550));
-        const pop = .72 + .28 * (1 - Math.pow(1 - age, 3));
-        plant.scale.setScalar(pop * (1 + Math.sin(now * .0018 + sway) * .018));
-      }
-      for (const pollinator of pollinators) {
-        const angle = now * .00048 + pollinator.phase;
-        pollinator.group.position.set(
-          pollinator.x + Math.cos(angle) * pollinator.radius,
-          .68 + Math.sin(angle * 1.7) * .045,
-          pollinator.z + Math.sin(angle) * pollinator.radius * .72,
-        );
-        pollinator.group.rotation.y = -angle;
-      }
+      refreshAnimatedInstances(now);
       gardenBed.material.color.lerp(targetBedColor, 1 - Math.exp(-delta * 2.2));
     } else {
       gardenBed.material.color.copy(targetBedColor);
@@ -506,14 +606,15 @@ export function createGarden(
     redraw,
     tick,
     get editing() { return editing; },
-    owns: (raycaster: T.Raycaster) => raycaster.intersectObjects(cells.filter(cell => cell.visible), false).length > 0,
+    owns: (raycaster: T.Raycaster) => cellMesh.visible && raycaster.intersectObject(cellMesh, false).length > 0,
     root,
     focus: new T.Vector3(-2, 0, 9),
     hit(raycaster: T.Raycaster) {
       if (!editing) return false;
-      const hit = raycaster.intersectObjects(cells.filter(cell => cell.visible), false)[0];
-      if (!hit) return false;
-      selectCell(hit.object.userData.cell.col, hit.object.userData.cell.row);
+      const hit = raycaster.intersectObject(cellMesh, false)[0];
+      const cell = hit?.instanceId === undefined ? undefined : visibleCells[hit.instanceId];
+      if (!cell) return false;
+      selectCell(cell.col, cell.row);
       return true;
     },
   };

@@ -303,25 +303,108 @@ function unlockAudio() {
 document.addEventListener('pointerdown', unlockAudio, { passive: true });
 window.addEventListener('keydown', unlockAudio);
 
-const atlasCache = new Map<string, T.Texture>();
+// Character sheets are 1774x887 RGBA (~6.3 MB decoded each) and one sweep over
+// both characters' nine looks plus their diagonals can ask for 36 of them. Only
+// the six most recently used stay cached - one character's wardrobe plus slack -
+// so long appearance-cycling sessions stay clear of the memory ceiling that
+// crashes mobile Safari tabs.
+const atlasMaxEntries = 6;
+const atlasByteBudget = 64 * 1024 * 1024;
+// Anisotropy is part of three's texture cache key, so it must be set before the
+// first upload or the same sheet is uploaded twice; 8 is plenty at these grazing
+// isometric angles.
+const atlasAnisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+type AtlasEntry = { texture: T.Texture; bytes: number };
+type AtlasStats = {
+  entries: number; pinned: number; estimatedBytes: number; evictions: number; disposed: number;
+  disposeEvents: number; maxEntries: number; byteBudget: number; anisotropy: number; gpuTextures: number;
+};
+const atlasCache = new Map<string, AtlasEntry>();
+const atlasDisposed = new WeakSet<T.Texture>();
 const visualActors: T.Group[] = [];
+let atlasBytesTotal = 0;
+let atlasEvictions = 0;
+let atlasDisposals = 0;
+let atlasDisposeEvents = 0;
+// Cloned actor textures share one GPU upload per Source, so a sheet any live
+// actor map still draws with is pinned: disposing it would kill that sprite.
+const atlasPinnedSources = () => {
+  const pinned = new Set<T.Source>();
+  for (const actor of visualActors) for (const texture of [actor.userData.texture, actor.userData.ghostTexture] as T.Texture[]) {
+    if (texture) pinned.add(texture.source);
+  }
+  return pinned;
+};
+const atlasImageBytes = (texture: T.Texture) => {
+  const image = texture.image as { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number } | null;
+  return ((image?.naturalWidth ?? image?.width ?? 0) * (image?.naturalHeight ?? image?.height ?? 0)) * 4;
+};
+function atlasTrim() {
+  const pinned = atlasPinnedSources();
+  while (atlasCache.size > atlasMaxEntries || atlasBytesTotal > atlasByteBudget) {
+    let victim: string | undefined;
+    for (const [url, entry] of atlasCache) if (!pinned.has(entry.texture.source)) { victim = url; break; }
+    // Everything left is still drawn by a live actor. Exceeding the soft budget
+    // is the safe failure, so keep them and retry after the next actor swap.
+    if (victim === undefined) break;
+    const entry = atlasCache.get(victim)!;
+    atlasCache.delete(victim);
+    atlasBytesTotal -= entry.bytes;
+    atlasEvictions++;
+    if (!atlasDisposed.has(entry.texture)) {
+      atlasDisposed.add(entry.texture);
+      entry.texture.dispose();
+      atlasDisposals++;
+    }
+  }
+}
+function atlasLoaded(url: string, texture: T.Texture) {
+  const entry = atlasCache.get(url);
+  if (entry?.texture === texture) {
+    entry.bytes = atlasImageBytes(texture);
+    atlasBytesTotal += entry.bytes;
+  }
+  // An actor can point at this Source before the sheet finishes decoding.
+  for (const actor of visualActors) for (const live of [actor.userData.texture, actor.userData.ghostTexture] as T.Texture[]) {
+    if (live?.source === texture.source) live.needsUpdate = true;
+  }
+  atlasTrim();
+}
 function selectedAtlas(isAngel: boolean, diagonal = false) {
   const hair = isAngel ? state.angelHair : state.gorHair;
   const outfit = isAngel ? state.angelOutfit : state.gorOutfit;
   const url = (diagonal ? diagonalAssets : lookAssets)[outfit][hair];
-  let atlas = atlasCache.get(url);
-  if (!atlas) {
-    atlas = new T.TextureLoader().load(url, loaded => {
-      for (const actor of visualActors) for (const texture of [actor.userData.texture, actor.userData.ghostTexture] as T.Texture[]) {
-        if (texture?.source === loaded.source) texture.needsUpdate = true;
-      }
-    });
-    atlas.colorSpace = T.SRGBColorSpace;
-    atlas.wrapS = T.ClampToEdgeWrapping;
-    atlas.wrapT = T.ClampToEdgeWrapping;
-    atlasCache.set(url, atlas);
+  const cached = atlasCache.get(url);
+  if (cached) {
+    atlasCache.delete(url);
+    atlasCache.set(url, cached);
+    return cached.texture;
   }
+  const atlas = new T.TextureLoader().load(url, loaded => atlasLoaded(url, loaded));
+  atlas.anisotropy = atlasAnisotropy;
+  atlas.colorSpace = T.SRGBColorSpace;
+  atlas.wrapS = T.ClampToEdgeWrapping;
+  atlas.wrapT = T.ClampToEdgeWrapping;
+  atlas.addEventListener('dispose', () => { atlasDisposeEvents++; });
+  atlasCache.set(url, { texture: atlas, bytes: 0 });
+  atlasTrim();
   return atlas;
+}
+// Growth counters for automated probes: no save data, credentials or user data.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __caravanAtlasDebug?: { stats(): AtlasStats } }).__caravanAtlasDebug = {
+    stats: () => {
+      const pinned = atlasPinnedSources();
+      let pinnedEntries = 0;
+      for (const entry of atlasCache.values()) if (pinned.has(entry.texture.source)) pinnedEntries++;
+      return {
+        entries: atlasCache.size, pinned: pinnedEntries, estimatedBytes: atlasBytesTotal,
+        evictions: atlasEvictions, disposed: atlasDisposals, disposeEvents: atlasDisposeEvents,
+        maxEntries: atlasMaxEntries, byteBudget: atlasByteBudget, anisotropy: atlasAnisotropy,
+        gpuTextures: renderer.info.memory.textures,
+      };
+    },
+  };
 }
 function character(isAngel: boolean) {
   const group = new T.Group();
@@ -384,10 +467,21 @@ function faceDirection(actor: T.Group, direction: T.Vector3) {
   if (frame.sector === actor.userData.sector) return;
   const texture = actor.userData.texture as T.Texture;
   const ghostTexture = actor.userData.ghostTexture as T.Texture;
-  ghostTexture.source = texture.source;
+  const next = selectedAtlas(actor.userData.angel, frame.diagonal);
+  // Dispose while a texture still points at its old Source: three reads
+  // texture.source then and frees that GPU texture at refcount zero, whereas a
+  // bare reassignment would keep drawing through the stale upload. The ghost
+  // keeps the previous frame's Source for the fade.
+  if (ghostTexture.source !== texture.source) {
+    ghostTexture.dispose();
+    ghostTexture.source = texture.source;
+  }
+  if (texture.source !== next.source) {
+    texture.dispose();
+    texture.source = next.source;
+  }
   ghostTexture.offset.copy(texture.offset);
   ghostTexture.needsUpdate = true;
-  texture.source = selectedAtlas(actor.userData.angel, frame.diagonal).source;
   const yOffset = actor.userData.angel ? 0.503 : 0.002;
   texture.offset.set(frame.column * 0.25 + 0.001, yOffset);
   texture.needsUpdate = true;
@@ -1306,10 +1400,17 @@ function animate() {
 function applyAppearance() {
   for (const actor of visualActors) {
     const texture = actor.userData.texture as T.Texture;
-    texture.source = selectedAtlas(actor.userData.angel, actor.userData.sector % 2 === 1).source;
-    texture.needsUpdate = true;
+    const atlas = selectedAtlas(actor.userData.angel, actor.userData.sector % 2 === 1);
     actor.userData.fade = 1;
     (actor.userData.ghost as T.Sprite).material.opacity = 0;
+    // Every save (planting, building, closing a dialog) runs this, but a source
+    // swap re-uploads the whole sheet, so only pay for it on a real change and
+    // release the old GPU texture first.
+    if (texture.source !== atlas.source) {
+      texture.dispose();
+      texture.source = atlas.source;
+      texture.needsUpdate = true;
+    }
     selectedAtlas(actor.userData.angel, actor.userData.sector % 2 !== 1);
   }
 }
@@ -1324,3 +1425,21 @@ function updateWorld() {
 districtWorld.activate('garden');
 districtWorld.sync(state);
 renderer.setAnimationLoop(animate);
+
+// Offline shell. This is the only place this file touches the service worker
+// lifecycle; the manifest link in index.html is the gate, so the single-file
+// `play.html` build (which has no manifest and must make zero requests) never
+// registers a worker, and `file:` is skipped outright. Every failure is
+// swallowed: a browser that refuses service workers must not break the garden.
+if (
+  typeof navigator !== 'undefined' &&
+  'serviceWorker' in navigator &&
+  (location.protocol === 'http:' || location.protocol === 'https:') &&
+  document.querySelector('link[rel="manifest"]')
+) {
+  window.addEventListener('load', () => {
+    try {
+      navigator.serviceWorker.register('/sw.js').catch(() => { /* offline shell is optional */ });
+    } catch { /* offline shell is optional */ }
+  });
+}

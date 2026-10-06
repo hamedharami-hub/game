@@ -12,6 +12,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Budget gate (test count, bundle, deploy weight, standalone)
+        run: npm run budget
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - uses: actions/upload-artifact@v4

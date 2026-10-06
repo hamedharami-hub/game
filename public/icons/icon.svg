@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="کاروان رؤیاها">
+  <title>کاروان رؤیاها</title>
+  <!-- Hand-written, no raster source: the palette is the game's own sky, sunlight and ground. -->
+  <rect width="512" height="512" fill="#a4cfb6"/>
+  <circle cx="358" cy="146" r="56" fill="#ffe1a8"/>
+  <path d="M150 200l13 33 33 13-33 13-13 33-13-33-33-13 33-13z" fill="#ffe1a8"/>
+  <!-- Two-Horn horizon. Everything that must survive a maskable crop stays inside
+       the central 80% circle (r≈205 around 256,256); the sky and ground are full bleed. -->
+  <path d="M0 386c44-10 66-40 100-56l50-42 56 48 50-36 50 36 56-48 50 42c34 16 56 46 100 56v126H0z" fill="#3f594f"/>
+  <!-- The caravan itself: a covered wagon resting in the meadow. -->
+  <path d="M196 386a60 52 0 0 1 120 0z" fill="#ffe1a8"/>
+  <rect x="196" y="386" width="120" height="30" rx="6" fill="#ffe1a8"/>
+  <circle cx="222" cy="430" r="15" fill="#3f594f"/>
+  <circle cx="290" cy="430" r="15" fill="#3f594f"/>
+</svg>

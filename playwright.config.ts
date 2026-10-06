@@ -6,6 +6,9 @@ const executablePath = process.env.CHROMIUM_PATH || (existsSync('/usr/bin/chromi
 
 export default defineConfig({
   testDir: './tests',
+  // `*.test.ts` are node:test suites owned by `npm test`; keep Playwright's collection to its own specs.
+  // `_*.spec.ts` are throwaway diagnostic probes (see the tsconfig exclude): they must never join a full run.
+  testIgnore: ['**/*.test.ts', '**/_*.spec.ts'],
   timeout: 90_000,
   workers: 1,
   webServer: {
