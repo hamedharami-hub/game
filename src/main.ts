@@ -19,6 +19,10 @@ import {
   isHandHoldDetached,
   calculateEmbraceTransform,
   planetElevation,
+  adjustFlightAltitude,
+  resolveObstacleCollision,
+  MIN_FLIGHT_ALTITUDE,
+  MAX_FLIGHT_ALTITUDE,
   type FlightState,
 } from './interactions';
 import {
@@ -45,6 +49,8 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
       <button id="build-action" class="glass" aria-label="چیدمان باغ">چیدمان</button>
       <button id="people-action" class="glass" aria-label="دیدار با همراهان">همراه‌ها</button>
       <button id="flight-toggle-btn" class="glass" aria-pressed="false" aria-label="پرواز دونفره">پرواز</button>
+      <button id="flight-ascend-btn" class="glass flight-altitude-btn" aria-label="افزایش ارتفاع پرواز" hidden>▲ اوج</button>
+      <button id="flight-descend-btn" class="glass flight-altitude-btn" aria-label="کاهش ارتفاع پرواز" hidden>▼ فرود</button>
       <button id="world-map-action" class="glass" aria-label="نقشهٔ سیاره">سیاره 🧭</button>
       <button id="camera-view" class="glass" aria-pressed="false" aria-label="تغییر نمای دوربین">نمای باز</button>
     </nav>
@@ -311,6 +317,8 @@ function selectedAtlas(isAngel: boolean, diagonal = false) {
       }
     });
     atlas.colorSpace = T.SRGBColorSpace;
+    atlas.wrapS = T.ClampToEdgeWrapping;
+    atlas.wrapT = T.ClampToEdgeWrapping;
     atlasCache.set(url, atlas);
   }
   return atlas;
@@ -319,9 +327,10 @@ function character(isAngel: boolean) {
   const group = new T.Group();
   const texture = selectedAtlas(isAngel).clone();
   texture.needsUpdate = true;
-  texture.repeat.set(.25, .5);
-  texture.offset.set(0, isAngel ? .5 : 0);
-  const sprite = new T.Sprite(new T.SpriteMaterial({ map: texture, transparent: true, alphaTest: .03, depthWrite: false }));
+  texture.repeat.set(0.248, 0.494);
+  const yOffset = isAngel ? 0.503 : 0.002;
+  texture.offset.set(0.001, yOffset);
+  const sprite = new T.Sprite(new T.SpriteMaterial({ map: texture, transparent: true, alphaTest: 0.08, depthWrite: false }));
   sprite.scale.set(2.8, 2.8, 1);
   sprite.position.y = 1.45;
   group.add(sprite);
@@ -337,7 +346,8 @@ function character(isAngel: boolean) {
   shadow.position.y = .025;
   group.add(shadow);
   const ghostTexture = texture.clone();
-  const ghost = new T.Sprite(new T.SpriteMaterial({ map: ghostTexture, transparent: true, opacity: 0, alphaTest: .03, depthWrite: false }));
+  ghostTexture.repeat.copy(texture.repeat);
+  const ghost = new T.Sprite(new T.SpriteMaterial({ map: ghostTexture, transparent: true, opacity: 0, alphaTest: 0.08, depthWrite: false }));
   ghost.scale.copy(sprite.scale);
   ghost.position.copy(sprite.position);
   group.add(ghost);
@@ -378,7 +388,8 @@ function faceDirection(actor: T.Group, direction: T.Vector3) {
   ghostTexture.offset.copy(texture.offset);
   ghostTexture.needsUpdate = true;
   texture.source = selectedAtlas(actor.userData.angel, frame.diagonal).source;
-  texture.offset.x = frame.column * .25;
+  const yOffset = actor.userData.angel ? 0.503 : 0.002;
+  texture.offset.set(frame.column * 0.25 + 0.001, yOffset);
   texture.needsUpdate = true;
   actor.userData.sector = frame.sector;
   actor.userData.fade = reducedMotion ? 1 : 0;
@@ -568,19 +579,25 @@ function toggleFlight(force?: boolean) {
   if (shouldFly === isFlying) return;
 
   const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
+  const ascendBtn = $<HTMLButtonElement>('flight-ascend-btn');
+  const descendBtn = $<HTMLButtonElement>('flight-descend-btn');
   if (shouldFly) {
     flightState = 'ascending';
     targetAltitude = 4.0;
     audioEngine.playFlightTakeoff();
     flightBtn?.setAttribute('aria-pressed', 'true');
     if (flightBtn) flightBtn.textContent = 'فرود';
+    ascendBtn?.removeAttribute('hidden');
+    descendBtn?.removeAttribute('hidden');
     fx.updateRibbonTrails(angel.position, gor.position, true);
-    setStatus('پرواز دونفره آغاز شد؛ با کلیدهای جهت‌دار اوج بگیرید.');
+    setStatus('پرواز دونفره آغاز شد؛ با کلیدهای Space و C یا دکمه‌های اوج و فرود ارتفاع را تنظیم کنید.');
   } else {
     flightState = 'descending';
     targetAltitude = 0.0;
     flightBtn?.setAttribute('aria-pressed', 'false');
     if (flightBtn) flightBtn.textContent = 'پرواز';
+    ascendBtn?.setAttribute('hidden', '');
+    descendBtn?.setAttribute('hidden', '');
     setStatus('فرود نرم بر پهنهٔ دشت...');
   }
 }
@@ -809,6 +826,16 @@ renderer.domElement.addEventListener('contextmenu', event => {
 
 $('people-action').onclick = () => peopleDialog($('people-action'));
 $('flight-toggle-btn').onclick = () => toggleFlight();
+$('flight-ascend-btn').onclick = () => {
+  if (flightState === 'grounded') return;
+  targetAltitude = adjustFlightAltitude(targetAltitude, 1.5);
+  setStatus(`ارتفاع پرواز: ${targetAltitude.toFixed(1)} متر`);
+};
+$('flight-descend-btn').onclick = () => {
+  if (flightState === 'grounded') return;
+  targetAltitude = adjustFlightAltitude(targetAltitude, -1.5);
+  setStatus(`ارتفاع پرواز: ${targetAltitude.toFixed(1)} متر`);
+};
 $('plant-action').onclick = () => { cancelCompanionMoments(); closeDialog(); if (flightState !== 'grounded') toggleFlight(false); ownGarden.open(); };
 $('interact').onclick = () => { if (nearestCompanion) peopleDialog($('interact')); };
 $('camera-view').onclick = () => {
@@ -866,6 +893,18 @@ window.addEventListener('keydown', event => {
   if (key === 'f') {
     event.preventDefault();
     toggleFlight();
+    return;
+  }
+  if ((key === ' ' || key === 'r') && flightState !== 'grounded') {
+    event.preventDefault();
+    targetAltitude = adjustFlightAltitude(targetAltitude, 1.2);
+    setStatus(`ارتفاع پرواز: ${targetAltitude.toFixed(1)} متر`);
+    return;
+  }
+  if ((key === 'c' || key === 'q' || event.shiftKey) && flightState !== 'grounded') {
+    event.preventDefault();
+    targetAltitude = adjustFlightAltitude(targetAltitude, -1.2);
+    setStatus(`ارتفاع پرواز: ${targetAltitude.toFixed(1)} متر`);
     return;
   }
   if (key === 'h' && nearestCompanion) {
@@ -950,6 +989,17 @@ function animate() {
       const bounds = worldBounds();
       const dx = angel.position.x - bounds.x, dz = angel.position.z - bounds.z, distance = Math.hypot(dx, dz);
       if (distance > bounds.r) { angel.position.x = bounds.x + dx * bounds.r / distance; angel.position.z = bounds.z + dz * bounds.r / distance; }
+
+      // Physical obstacles (trees, central pond, structures) block ground movement
+      if (!isFlying || baseAltitude < 1.2) {
+        const resolved = resolveObstacleCollision(
+          { x: angel.position.x, z: angel.position.z },
+          0.38,
+          districtWorld.obstacles
+        );
+        angel.position.x = resolved.x;
+        angel.position.z = resolved.z;
+      }
       faceDirection(angel, movement);
 
       // Banking physics computation
@@ -962,6 +1012,15 @@ function animate() {
       bankAngle = calculateBankingRoll(bankAngle, isFlying ? turnRate : 0, dt);
     } else {
       bankAngle = calculateBankingRoll(bankAngle, 0, dt);
+    }
+
+    if (isFlying) {
+      if (keys.has(' ') || keys.has('r') || keys.has('KeyR')) {
+        targetAltitude = adjustFlightAltitude(targetAltitude, dt * 4.5);
+      }
+      if (keys.has('c') || keys.has('q') || keys.has('KeyC') || keys.has('ShiftLeft') || keys.has('ShiftRight')) {
+        targetAltitude = adjustFlightAltitude(targetAltitude, -dt * 4.5);
+      }
     }
 
     const companionOnMoment = updateAutonomousCompanion(now, dt);
@@ -1025,6 +1084,16 @@ function animate() {
         gor.position.addScaledVector(follow.normalize(), step);
         if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
       }
+
+      if (!isFlying || baseAltitude < 1.2) {
+        const resolvedGor = resolveObstacleCollision(
+          { x: gor.position.x, z: gor.position.z },
+          0.38,
+          districtWorld.obstacles
+        );
+        gor.position.x = resolvedGor.x;
+        gor.position.z = resolvedGor.z;
+      }
     }
   }
 
@@ -1033,7 +1102,7 @@ function animate() {
 
   // Flight Altitude Dynamics
   baseAltitude = calculateFlightAltitude(baseAltitude, targetAltitude, dt, 3.5, 3.5);
-  if (flightState === 'ascending' && Math.abs(baseAltitude - 4.0) < 0.05) {
+  if (flightState === 'ascending' && Math.abs(baseAltitude - targetAltitude) < 0.15) {
     flightState = 'cruising';
   } else if (flightState === 'descending' && baseAltitude <= 0.04) {
     flightState = 'grounded';
@@ -1042,6 +1111,8 @@ function animate() {
     const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
     flightBtn?.setAttribute('aria-pressed', 'false');
     if (flightBtn) flightBtn.textContent = 'پرواز';
+    $<HTMLButtonElement>('flight-ascend-btn')?.setAttribute('hidden', '');
+    $<HTMLButtonElement>('flight-descend-btn')?.setAttribute('hidden', '');
     setStatus('به آرامی روی سبزه فرود آمدید.');
   }
 

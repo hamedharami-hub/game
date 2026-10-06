@@ -22,6 +22,10 @@ import {
   CRUISE_ALTITUDE,
   calculateWingFlapAngle,
   calculateEmbraceTransform,
+  adjustFlightAltitude,
+  resolveObstacleCollision,
+  MIN_FLIGHT_ALTITUDE,
+  MAX_FLIGHT_ALTITUDE,
 } from './interactions.ts';
 
 // ============================================================================
@@ -415,5 +419,53 @@ test('calculateEmbraceTransform produces 3-phase smooth embrace trajectory', () 
   const end = calculateEmbraceTransform(1.0);
   assert.equal(end.approachFactor, 0);
   assert.equal(end.tiltAngle, 0);
+});
+
+test('adjustFlightAltitude scales altitude smoothly and clamps within min and max bounds', () => {
+  // Ascend
+  const ascended = adjustFlightAltitude(4.0, 2.5);
+  assert.equal(ascended, 6.5);
+
+  // Clamp at max
+  const maxClamped = adjustFlightAltitude(11.0, 3.0);
+  assert.equal(maxClamped, MAX_FLIGHT_ALTITUDE);
+
+  // Descend
+  const descended = adjustFlightAltitude(4.0, -1.5);
+  assert.equal(descended, 2.5);
+
+  // Clamp at min
+  const minClamped = adjustFlightAltitude(1.5, -2.0);
+  assert.equal(minClamped, MIN_FLIGHT_ALTITUDE);
+
+  // NaN resilience
+  const nanSafe = adjustFlightAltitude(NaN, NaN);
+  assert.equal(nanSafe, CRUISE_ALTITUDE);
+});
+
+test('resolveObstacleCollision pushes character out of obstacle radius smoothly', () => {
+  const obstacles = [
+    { x: 0, z: 0, radius: 2.0 },
+    { x: 10, z: 10, radius: 1.5 },
+  ];
+
+  // Character inside obstacle at (1.0, 0) with charRadius 0.4
+  // minDistance = 2.0 + 0.4 = 2.4
+  const res = resolveObstacleCollision({ x: 1.0, z: 0 }, 0.4, obstacles);
+  assert.equal(res.collided, true);
+  assert.ok(Math.abs(res.x - 2.4) < 1e-4);
+  assert.equal(res.z, 0);
+
+  // Character outside obstacle at (3.0, 0)
+  const outside = resolveObstacleCollision({ x: 3.0, z: 0 }, 0.4, obstacles);
+  assert.equal(outside.collided, false);
+  assert.equal(outside.x, 3.0);
+  assert.equal(outside.z, 0);
+
+  // Empty or invalid obstacles array
+  const emptyRes = resolveObstacleCollision({ x: 1.0, z: 2.0 }, 0.4, []);
+  assert.equal(emptyRes.collided, false);
+  assert.equal(emptyRes.x, 1.0);
+  assert.equal(emptyRes.z, 2.0);
 });
 

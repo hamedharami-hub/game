@@ -91,11 +91,79 @@ export interface TraversalState {
   idleTimer: number;
 }
 
+export const MIN_FLIGHT_ALTITUDE = 1.2;
 export const CRUISE_ALTITUDE = 4.0;
+export const MAX_FLIGHT_ALTITUDE = 12.0;
 export const HAND_HOLD_SPACING = 0.90;
 export const HAND_HOLD_MAX_PROXIMITY = 3.5;
 export const HAND_HOLD_BREAK_DISTANCE = 4.2;
 export const IDLE_AWARENESS_THRESHOLD_MS = 4500;
+
+export interface ObstacleCircle {
+  x: number;
+  z: number;
+  radius: number;
+}
+
+/**
+ * Adjusts soaring altitude dynamically with safe min/max boundary clamping.
+ */
+export function adjustFlightAltitude(
+  current: number,
+  delta: number,
+  minAlt: number = MIN_FLIGHT_ALTITUDE,
+  maxAlt: number = MAX_FLIGHT_ALTITUDE
+): number {
+  const cur = Number.isFinite(current) ? current : CRUISE_ALTITUDE;
+  const d = Number.isFinite(delta) ? delta : 0;
+  return Math.max(minAlt, Math.min(maxAlt, cur + d));
+}
+
+/**
+ * Resolves 2D circular obstacle collisions with soft pushout and sliding kinematics.
+ */
+export function resolveObstacleCollision(
+  pos: { x: number; z: number },
+  characterRadius: number,
+  obstacles: readonly ObstacleCircle[]
+): { x: number; z: number; collided: boolean } {
+  let cx = Number.isFinite(pos?.x) ? pos.x : 0;
+  let cz = Number.isFinite(pos?.z) ? pos.z : 0;
+  const cr = Number.isFinite(characterRadius) ? Math.max(0.01, characterRadius) : 0.35;
+  let hasCollided = false;
+
+  if (!Array.isArray(obstacles) || obstacles.length === 0) {
+    return { x: cx, z: cz, collided: false };
+  }
+
+  for (let iter = 0; iter < 2; iter++) {
+    for (let i = 0; i < obstacles.length; i++) {
+      const obs = obstacles[i];
+      const ox = Number.isFinite(obs?.x) ? obs.x : 0;
+      const oz = Number.isFinite(obs?.z) ? obs.z : 0;
+      const or = Number.isFinite(obs?.radius) ? obs.radius : 0.5;
+
+      const dx = cx - ox;
+      const dz = cz - oz;
+      const minDistance = or + cr;
+      const distSq = dx * dx + dz * dz;
+
+      if (distSq < minDistance * minDistance) {
+        hasCollided = true;
+        const dist = Math.sqrt(distSq);
+        if (dist > 1e-4) {
+          const push = (minDistance - dist) / dist;
+          cx += dx * push;
+          cz += dz * push;
+        } else {
+          cx += minDistance;
+        }
+      }
+    }
+  }
+
+  return { x: cx, z: cz, collided: hasCollided };
+}
 
 export function createTraversalState(): TraversalState {
   return {

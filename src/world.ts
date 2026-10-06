@@ -6,6 +6,7 @@ import {
   type Furnishing,
   type State,
 } from './state';
+import type { ObstacleCircle } from './interactions';
 
 /** Calculates spherical planet elevation drop to produce rolling planetary horizon. */
 export function planetElevation(x: number, z: number): number {
@@ -724,6 +725,53 @@ export function createWorld(scene: T.Scene) {
     return { x: 0, z: 0, r: 82 };
   }
 
+  const worldObstacles: ObstacleCircle[] = [];
+
+  // 1. Forest tree trunks
+  treePositions.forEach(tree => {
+    worldObstacles.push({
+      x: tree.x,
+      z: tree.z,
+      radius: 0.38 * tree.size,
+    });
+  });
+
+  // 2. Central pond deep water
+  worldObstacles.push({ x: 0, z: 0, radius: 5.65 });
+
+  // 3. Community grand tree
+  worldObstacles.push({ x: 0, z: -13, radius: 1.35 });
+
+  // 4. Two-Horn Home cottage
+  worldObstacles.push({ x: -23.2, z: -10, radius: 2.1 });
+  worldObstacles.push({ x: -20.8, z: -10, radius: 2.1 });
+
+  // 5. Greenhouse structure
+  worldObstacles.push({ x: 18.2, z: 14, radius: 2.4 });
+  worldObstacles.push({ x: 21.8, z: 14, radius: 2.4 });
+
+  // 6. Village central fountain
+  worldObstacles.push({ x: 24, z: -13, radius: 2.1 });
+
+  // 7. Village houses
+  for (const [x, z] of [[-5, -4], [5, -4], [-5, 4], [5, 4]]) {
+    worldObstacles.push({ x: 24 + x, z: -13 + z, radius: 1.9 });
+  }
+
+  // 8. Elder tree in grove
+  worldObstacles.push({ x: -21 - 10.8, z: 19 - 9.8, radius: 1.35 });
+
+  // 9. Stream in grove (safe footbridge crossing allowed at z ~= 1.45 relative to grove)
+  for (let i = 0; i <= 10; i++) {
+    const pt = streamCurve.getPoint(i / 10);
+    const wx = -21 + pt.x;
+    const wz = 19 + pt.z;
+    const nearBridge = Math.hypot(wx - (-21), wz - (19 + 1.45)) < 1.9;
+    if (!nearBridge) {
+      worldObstacles.push({ x: wx, z: wz, radius: 0.85 });
+    }
+  }
+
   return {
     sync,
     tick,
@@ -731,5 +779,6 @@ export function createWorld(scene: T.Scene) {
     get ground() { return ground; },
     root: (id: District) => roots[id],
     bounds,
+    get obstacles() { return worldObstacles; },
   };
 }

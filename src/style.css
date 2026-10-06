@@ -182,6 +182,20 @@ header {
   background: linear-gradient(135deg, #3a6c51, #244837);
   box-shadow: 0 4px 14px rgb(29 54 40 / 30%);
 }
+#flight-ascend-btn, #flight-descend-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a4448;
+  background: rgba(145, 205, 179, 0.35);
+  border-color: rgba(255, 255, 255, 0.45);
+  font-weight: 700;
+  transition: all 0.18s ease;
+}
+#flight-ascend-btn:active, #flight-descend-btn:active {
+  transform: scale(0.94);
+  background: rgba(145, 205, 179, 0.6);
+}
 
 #camera-view { color: var(--forest-deep); }
 
