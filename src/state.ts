@@ -3,14 +3,16 @@ export const resources = ['seed', 'crystal', 'feather'] as const;
 export type Resource = typeof resources[number];
 export type Invention = 'lantern' | 'sprout';
 export interface State { version: 1; collected: Resource[]; invention: Invention | null; restored: boolean; plotLevel: number; plants: Plant[]; essence: number; houseLevel: number; projects: Project[]; hybrids: boolean; aura: number; lastGatherAt: number | null; visited: District[]; worldSeed: number; regionLevels: Record<District,number>; decorations: Decoration[]; gorHair: HairColor; angelHair:HairColor; gorOutfit:Outfit; angelOutfit:Outfit }
-export const initialState = (): State => ({ version: 1, collected: [], invention: null, restored: false, plotLevel: 1, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
+export const initialState = (): State => ({ version: 1, collected: [], invention: null, restored: false, plotLevel: 5, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
 export function decodeSave(raw: string | null): State {
   try {
     const s = JSON.parse(raw ?? 'null');
     if (!s || s.version !== 1 || !Array.isArray(s.collected) || !s.collected.every((r: unknown) => resources.includes(r as Resource))) return initialState();
     const collected = [...new Set<Resource>(s.collected)];
     const invention = ['lantern', 'sprout'].includes(s.invention) && collected.length === 3 ? s.invention as Invention : null;
-    const plotLevel = [1,2,3,4,5].includes(s.plotLevel) ? s.plotLevel : 1;
+    // Open the complete garden for both new and returning players. Older saves
+    // keep their plants and appearance, while the previously locked soil opens.
+    const plotLevel = 5;
     const plants: Plant[] = [];
     for(const p of Array.isArray(s.plants)?s.plants:[]){
       if(!p||typeof p.id!=='string'||!/^[a-z0-9-]{1,64}$/i.test(p.id)||!Object.hasOwn(species,p.species)||!cellUnlocked(plotLevel,p.col,p.row)||![p.plantedAt,p.boostMs,p.lastWaterAt].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0)||plants.some(q=>q.id===p.id||q.col===p.col&&q.row===p.row))continue;
@@ -31,20 +33,27 @@ export function craft(s: State, invention: Invention): State { return s.collecte
 export function restore(s: State): State { return s.invention && !s.restored ? { ...s, restored: true } : s; }
 
 export const species = {
-  moonflower: { name: 'گل ماه', minutes: 6, color: '#dad0f3' },
-  sunblossom: { name: 'گل آفتاب', minutes: 10, color: '#f7ca75' },
-  spiritfern: { name: 'سرخس روح', minutes: 15, color: '#91dac3' },
-  starlily: { name: 'سوسن ستاره', minutes: 12, color: '#f0a6bf' },
+  moonflower: { name: 'گل ماه', minutes: 1, color: '#dad0f3' },
+  sunblossom: { name: 'گل آفتاب', minutes: 1.5, color: '#f7ca75' },
+  spiritfern: { name: 'سرخس روح', minutes: 2, color: '#91dac3' },
+  starlily: { name: 'سوسن ستاره', minutes: 1.25, color: '#f0a6bf' },
 } as const;
 export type Species = keyof typeof species;
 export interface Plant { id: string; species: Species; col: number; row: number; plantedAt: number; boostMs: number; lastWaterAt: number; lastHarvestAt: number | null }
 export const stageNames = ['بذر', 'جوانه', 'بوته', 'شکوفه'] as const;
 export function gridSize(level: number) { return 2 + level * 2; }
 export function cellUnlocked(level: number, col: number, row: number) { const min = 4 - gridSize(level) / 2; return Number.isInteger(col) && Number.isInteger(row) && col >= min && row >= min && col < 8-min && row < 8-min; }
-export function growthStage(p: Plant, now = Date.now()): number { const progress = Math.max(0, now-p.plantedAt) + p.boostMs; return Math.min(3, Math.floor(progress / (species[p.species].minutes*60000/3))); }
-export function growRemaining(p: Plant, now = Date.now()) { return Math.max(0, species[p.species].minutes*60000 - Math.max(0,now-p.plantedAt) - p.boostMs); }
+export function growthDurationMs(p: Plant) {
+  // Each planted flower gets a stable, subtle rhythm so nearby blooms do not
+  // all open on the same beat. The variation follows the plant when moved.
+  let hash = 0;
+  for (const char of `${p.species}:${p.id}`) hash = (hash * 31 + char.charCodeAt(0)) % 201;
+  return species[p.species].minutes * 60_000 * (0.9 + hash / 1_000);
+}
+export function growthStage(p: Plant, now = Date.now()): number { const progress = Math.max(0, now-p.plantedAt) + p.boostMs; return Math.min(3, Math.floor(progress / (growthDurationMs(p)/3))); }
+export function growRemaining(p: Plant, now = Date.now()) { return Math.max(0, growthDurationMs(p) - Math.max(0,now-p.plantedAt) - p.boostMs); }
 export function plantAt(s: State, kind: Species, col: number, row: number, now: number, id: string): State {
-  if (!species[kind] || kind==='starlily'&&!s.hybrids || !cellUnlocked(s.plotLevel,col,row) || s.plants.some(p=>p.col===col&&p.row===row||p.id===id) || !Number.isFinite(now) || now<0) return s;
+  if (!species[kind] || !cellUnlocked(s.plotLevel,col,row) || s.plants.some(p=>p.col===col&&p.row===row||p.id===id) || !Number.isFinite(now) || now<0) return s;
   return {...s,plants:[...s.plants,{id,species:kind,col,row,plantedAt:now,boostMs:0,lastWaterAt:0,lastHarvestAt:null}]};
 }
 export function movePlant(s: State, id: string, col: number, row: number): State {
@@ -53,12 +62,13 @@ export function movePlant(s: State, id: string, col: number, row: number): State
   return {...s,plants:s.plants.map(p=>p.id===id?{...p,col,row}:p)};
 }
 export function waterPlant(s: State,id:string,now=Date.now()):State {
- const p=s.plants.find(p=>p.id===id);if(!p||growthStage(p,now)===3||now<p.plantedAt||p.boostMs>0&&now-p.lastWaterAt<180000)return s;
- return {...s,plants:s.plants.map(p=>p.id===id?{...p,lastWaterAt:now,boostMs:p.boostMs+species[p.species].minutes*15000}:p)};
+ const p=s.plants.find(p=>p.id===id);if(!p||growthStage(p,now)===3||!Number.isFinite(now)||now<p.plantedAt)return s;
+ const duration=growthDurationMs(p), boost=Math.min(duration,p.boostMs+duration/3);
+ return {...s,plants:s.plants.map(p=>p.id===id?{...p,lastWaterAt:now,boostMs:boost}:p)};
 }
-export function expansionRequirement(level:number){return [0,2,6,12,20][level]??Infinity;}
+export function expansionRequirement(_level:number){return 0;}
 export function expandPlot(s:State,now=Date.now()):State {
- if(s.plotLevel>=5||s.plants.filter(p=>growthStage(p,now)===3).length<expansionRequirement(s.plotLevel))return s;
+ if(s.plotLevel>=5)return s;
  return {...s,plotLevel:s.plotLevel+1};
 }
 export function storageKey(profile: string | null) { return profile ? `${SAVE_KEY}:profile:${encodeURIComponent(profile.slice(0,128))}` : SAVE_KEY; }
@@ -67,67 +77,68 @@ function bounded(value:unknown,max:number){return typeof value==='number'&&Numbe
 export const districtIds=['garden','greenhouse','home','village','grove','sanctuary'] as const;
 export type District=typeof districtIds[number];
 export const projects={
- bench:{name:'نیمکت عاشقانه',cost:3,district:'garden'},
- pond:{name:'برکهٔ نیلوفر',cost:5,district:'garden'},
- greenhouse:{name:'فعال‌کردن گلخانه',cost:8,district:'greenhouse'},
- lamps:{name:'چراغ‌های میدان',cost:6,district:'village'},
- fountain:{name:'آبنمای مردم',cost:10,district:'village'},
- bridge:{name:'پلِ بیشه',cost:5,district:'grove'},
- butterfly:{name:'پناه پروانه‌های نور',cost:4,district:'garden'},
- seedvault:{name:'خزانهٔ بذرها',cost:5,district:'greenhouse'},
- moonlab:{name:'رصدخانهٔ پیوند',cost:7,district:'greenhouse'},
- library:{name:'کتابخانهٔ خاطره',cost:5,district:'home'},
- skyterrace:{name:'ایوان آسمان',cost:7,district:'home'},
- market:{name:'بازارِ نور',cost:5,district:'village'},
- gathering:{name:'حلقهٔ گردهمایی',cost:7,district:'village'},
- spiritgate:{name:'دروازهٔ درختان روح',cost:5,district:'grove'},
- waterfall:{name:'آبشارِ روح',cost:7,district:'grove'},
- memory:{name:'آینهٔ خاطره',cost:5,district:'sanctuary'},
- constellation:{name:'ستاره‌نگارِ عشق',cost:7,district:'sanctuary'},
+ bench:{name:'نیمکت عاشقانه',cost:0,district:'garden'},
+ pond:{name:'برکهٔ نیلوفر',cost:0,district:'garden'},
+ greenhouse:{name:'فعال‌کردن گلخانه',cost:0,district:'greenhouse'},
+ lamps:{name:'چراغ‌های میدان',cost:0,district:'village'},
+ fountain:{name:'آبنمای مردم',cost:0,district:'village'},
+ bridge:{name:'پلِ بیشه',cost:0,district:'grove'},
+ butterfly:{name:'پناه پروانه‌های نور',cost:0,district:'garden'},
+ seedvault:{name:'خزانهٔ بذرها',cost:0,district:'greenhouse'},
+ moonlab:{name:'رصدخانهٔ پیوند',cost:0,district:'greenhouse'},
+ library:{name:'کتابخانهٔ خاطره',cost:0,district:'home'},
+ skyterrace:{name:'ایوان آسمان',cost:0,district:'home'},
+ market:{name:'بازارِ نور',cost:0,district:'village'},
+ gathering:{name:'حلقهٔ گردهمایی',cost:0,district:'village'},
+ spiritgate:{name:'دروازهٔ درختان روح',cost:0,district:'grove'},
+ waterfall:{name:'آبشارِ روح',cost:0,district:'grove'},
+ memory:{name:'آینهٔ خاطره',cost:0,district:'sanctuary'},
+ constellation:{name:'ستاره‌نگارِ عشق',cost:0,district:'sanctuary'},
 } as const;
 export type Project=keyof typeof projects;
 export function buildProject(s:State,id:Project):State{
- if(!Object.hasOwn(projects,id)||s.projects.includes(id)||s.essence<projects[id].cost)return s;
- return {...s,essence:s.essence-projects[id].cost,projects:[...s.projects,id]};
+ if(!Object.hasOwn(projects,id)||s.projects.includes(id))return s;
+ return {...s,projects:[...s.projects,id]};
 }
 export function harvest(s:State,id:string,now=Date.now()):State{
  const p=s.plants.find(p=>p.id===id);
- if(!p||!Number.isFinite(now)||now<p.plantedAt||growthStage(p,now)<3||p.lastHarvestAt!==null&&now-p.lastHarvestAt<180000)return s;
- return {...s,essence:Math.min(100000,s.essence+2),plants:s.plants.map(p=>p.id===id?{...p,lastHarvestAt:now}:p)};
+ if(!p||!Number.isFinite(now)||now<p.plantedAt||growthStage(p,now)<3)return s;
+ // A harvested flower remains planted and begins a fresh, short growth cycle.
+ return {...s,plants:s.plants.map(p=>p.id===id?{...p,plantedAt:now,boostMs:0,lastWaterAt:0,lastHarvestAt:now}:p)};
 }
 export function gatherLight(s:State,now=Date.now()):State{
- if(!Number.isFinite(now)||now<0||s.lastGatherAt!==null&&now-s.lastGatherAt<60000)return s;
+ if(!Number.isFinite(now)||now<0)return s;
  return {...s,essence:Math.min(100000,s.essence+3),lastGatherAt:now};
 }
 export function upgradeHouse(s:State):State{
- const cost=[6,12,20][s.houseLevel];if(cost===undefined||s.essence<cost)return s;
- return {...s,essence:s.essence-cost,houseLevel:s.houseLevel+1};
+ if(s.houseLevel>=3)return s;
+ return {...s,houseLevel:s.houseLevel+1};
 }
 export function discoverHybrid(s:State,now=Date.now()):State{
- if(s.hybrids||!s.projects.includes('greenhouse')||s.essence<4||!['moonflower','sunblossom'].every(kind=>s.plants.some(p=>p.species===kind&&growthStage(p,now)===3)))return s;
- return {...s,essence:s.essence-4,hybrids:true};
+ if(s.hybrids)return s;
+ return {...s,hybrids:true};
 }
 export function awakenAura(s:State):State{
- if(s.aura>=3||s.essence<5)return s;return {...s,essence:s.essence-5,aura:s.aura+1};
+ if(s.aura>=3)return s;return {...s,aura:s.aura+1};
 }
 export function visitDistrict(s:State,id:District):State{
  return !districtIds.includes(id)||s.visited.includes(id)?s:{...s,visited:[...s.visited,id]};
 }
 
-export const furnishings={crystal:{name:'بلورِ روح',cost:2},arbor:{name:'طاقِ شکوفه',cost:3},pool:{name:'حوض نور',cost:4},pavilion:{name:'کوشک جادویی',cost:5}} as const;
+export const furnishings={crystal:{name:'بلورِ روح',cost:0},arbor:{name:'طاقِ شکوفه',cost:0},pool:{name:'حوض نور',cost:0},pavilion:{name:'کوشک جادویی',cost:0}} as const;
 export type Furnishing=keyof typeof furnishings;
 export interface Decoration {district:District;slot:number;kind:Furnishing}
 function emptyRegionLevels(){return Object.fromEntries(districtIds.map(id=>[id,0])) as Record<District,number>;}
 export function regionRadius(id:District,level:number){return (id==='garden'?26:32)+level*4;}
 export function regionSlots(level:number){return 8+level*4;}
-export function regionExpansionCost(level:number){return 3+level*3;}
+export function regionExpansionCost(_level:number){return 0;}
 export function expandRegion(s:State,id:District):State{
- if(!districtIds.includes(id)||s.regionLevels[id]>=20)return s;const cost=regionExpansionCost(s.regionLevels[id]);
- if(s.essence<cost)return s;return {...s,essence:s.essence-cost,regionLevels:{...s.regionLevels,[id]:s.regionLevels[id]+1}};
+ if(!districtIds.includes(id)||s.regionLevels[id]>=20)return s;
+ return {...s,regionLevels:{...s.regionLevels,[id]:s.regionLevels[id]+1}};
 }
 export function placeDecoration(s:State,district:District,slot:number,kind:Furnishing):State{
- if(!districtIds.includes(district)||!Object.hasOwn(furnishings,kind)||!Number.isInteger(slot)||slot<0||slot>=regionSlots(s.regionLevels[district])||s.decorations.some(d=>d.district===district&&d.slot===slot)||s.essence<furnishings[kind].cost)return s;
- return {...s,essence:s.essence-furnishings[kind].cost,decorations:[...s.decorations,{district,slot,kind}]};
+ if(!districtIds.includes(district)||!Object.hasOwn(furnishings,kind)||!Number.isInteger(slot)||slot<0||slot>=regionSlots(s.regionLevels[district])||s.decorations.some(d=>d.district===district&&d.slot===slot))return s;
+ return {...s,decorations:[...s.decorations,{district,slot,kind}]};
 }
 export function removeDecoration(s:State,district:District,slot:number):State{
  if(!s.decorations.some(d=>d.district===district&&d.slot===slot))return s;

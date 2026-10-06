@@ -1,29 +1,17 @@
-# Validation — 2026-10-04
-
-Validated locally using Node 24 and Chromium with software WebGL on the managed environment.
+# Validation — 2026-10-06 · v0.3.0
 
 | Check | Result |
 | --- | --- |
-| Frozen-lockfile install of independent repository (`npm ci`) | Passed, 28 packages installed |
-| Pure state/migration/direction tests (`npm test`) | 17 passed, 0 failed/skipped |
-| Asset contract/hash verification | 18 atlases and one story illustration verified |
-| Typecheck + production + standalone build, original and independent checkout | Passed |
-| Browser suite before final dialog cleanup | 16 passed, 2 failed: closed story DOM retained, not a movement-angle failure |
-| Final retest after cleanup: directions and complete journey/offline export | 7 passed, 0 failed/skipped, desktop and mobile |
-| Host ARSHNAZ iframe test | 1 passed |
-| Host ARSHNAZ typecheck/production build | Passed; later game-only static artifact refreshed |
+| `npm test` — save migration, planting, growth, harvest and construction | 9 passed, 0 failed/skipped |
+| `npm run build` — art verification, TypeScript, Vite and standalone export | Passed |
+| Approved artwork validation | 18 directional atlases, four card sheets and immutable face references verified |
+| `PLAYWRIGHT_PORT=4175 npx playwright test` | 8 passed, 0 failed/skipped |
+| `git diff --check` | Passed |
 
-All 18 named browser scenarios have passing results in the relevant runs. The last run deliberately reran the two failing cases and the five complete journey/offline flows affected by closed-dialog cleanup; it was not a new full 18-case run. Initial mobile header overlap was also found and fixed; full mobile journeys passed subsequently. No tests were disabled or asserted away.
+Browser coverage: 1440px desktop and 390px mobile planting/building/companion flows; mobile action placement; local save reload; reduced-motion and keyboard use; all eight movement directions; character and card image decoding; and the standalone offline HTML with one document request.
 
-Covered: 9 independent hair/outfit combinations per actor, all 18 image atlases decoded, eight camera-relative movement angles, close/wide framing, limited story illustrations, planting/relocation/growth/expansion, account isolation, saved construction, all six regions, spending/cooldowns/hybrid, complete initial inventions and offline HTML with one document request and no dependent network requests.
+Earlier version-1 saves retain plants, personal appearance and profile isolation. Their garden expands to the complete 12×12 plot without resetting plant age. The standalone release at `release/play.html` was regenerated from the validated build.
 
-WebP runtime assets were encoded losslessly with exact RGBA equality checked against PNG sources. Source faces/angles were visually reviewed. This is functional validation, not a frame-rate benchmark on physical phones. Remote GitHub Actions have not run, and this document does not establish a deployed site or online repository.
+Fresh screenshots: [desktop connected world](../previews/connected-world-1440.png) · [mobile planting panel](../previews/planting-390.png).
 
-The editable source and tests are the review basis. release/play.html is an embedded generated artifact. No original private reference photos, account save data or credentials are included.
-
-## Album update
-- Build/typecheck/asset digests passed; 17 state tests passed.
-- Desktop 1440 and mobile 390 album tests passed: 24 cards, actor/style filtering, enlarged previous/next, return focus, successful sheet download, four decoded sheets and unchanged non-empty persisted game state.
-- Existing standalone game smoke passed with only its document request.
-- Initial album test invocation reused the prior host checkout preview and was stopped; verification was rerun against this independent repository's current dist. No assertions were removed.
-- Dedicated standalone album check passed: all four embedded sheets decoded, all 24 cards shown, no dependent network requests (one document request only).
+The production build has a Vite advisory that the uncompressed JavaScript chunk exceeds 500 kB; it is 147 kB gzipped. Browser checks use Chromium software rendering. Frame rate has not been benchmarked on physical phones, and no deployed site or remote GitHub Actions run is claimed here.

@@ -1,9 +1,41 @@
-import {test,expect} from '@playwright/test';
-import {readFileSync} from 'node:fs';
-import manifest from '../docs/ASSET_MANIFEST.json' with {type:'json'};
-for(const width of [1440,390])test(`independent nine looks, decoded images and persistence ${width}`,async({page})=>{
- test.setTimeout(120000);await page.setViewportSize({width,height:900});const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/?profile=wardrobe');await page.locator('#close-dialog').click();await page.locator('#camera-view').click();await expect(page.locator('main')).toHaveAttribute('data-camera','wide');await expect.poll(async()=>Number(await page.locator('#camera-view').getAttribute('data-scale'))).toBeGreaterThan(1.6);await page.locator('#camera-view').click();await expect(page.locator('main')).toHaveAttribute('data-camera','close');await page.locator('#open-build').click();
- for(const outfit of ['classic','traveler','celestial']){await page.locator(`[data-angel-outfit=${outfit}]`).click();await page.locator(`[data-gor-outfit=${outfit}]`).click();for(const hair of ['black','brown','white']){await page.locator(`[data-angel-hair=${hair}]`).click();await page.locator(`[data-hair=${hair}]`).click();await expect(page.locator(`[data-angel-hair=${hair}]`)).toHaveAttribute('aria-pressed','true');await expect(page.locator(`[data-hair=${hair}]`)).toHaveAttribute('aria-pressed','true');}}
- await page.locator('[data-angel-hair=brown]').click();await page.locator('[data-gor-outfit=traveler]').click();await page.locator('[data-hair=black]').click();await page.screenshot({path:`previews/wardrobe-controls-${width}.png`});await page.locator('#close-dialog').click();await page.waitForTimeout(1000);await page.screenshot({path:`previews/wardrobe-world-${width}.png`});await page.reload();await page.locator('#close-dialog').click();await page.locator('#open-build').click();await expect(page.locator('[data-angel-hair=brown]')).toHaveAttribute('aria-pressed','true');await expect(page.locator('[data-angel-outfit=celestial]')).toHaveAttribute('aria-pressed','true');await expect(page.locator('[data-hair=black]')).toHaveAttribute('aria-pressed','true');await expect(page.locator('[data-gor-outfit=traveler]')).toHaveAttribute('aria-pressed','true');
- const decoded=await page.evaluate(async paths=>Promise.all(paths.map(async src=>{const im=new Image();im.src=src;await im.decode();return [im.naturalWidth,im.naturalHeight];})),[...manifest.assets,...manifest.diagonalAssets].map(a=>'/'+a.runtime.replace('public/','')));expect(decoded).toEqual([...manifest.assets,...manifest.diagonalAssets].map(a=>[a.width,a.height]));expect(errors).toEqual([]);
+import { test, expect } from '@playwright/test';
+import manifest from '../docs/ASSET_MANIFEST.json' with { type: 'json' };
+
+test('all approved character looks and diagonal atlases decode; saved appearance survives play', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.addInitScript(() => localStorage.setItem(
+    'dream-caravan:garden:v1:profile:identity-memory',
+    JSON.stringify({
+      version: 1,
+      collected: [],
+      gorHair: 'brown',
+      angelHair: 'white',
+      gorOutfit: 'traveler',
+      angelOutfit: 'celestial',
+    }),
+  ));
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/?profile=identity-memory');
+  await expect(page.locator('canvas')).toBeVisible();
+
+  const atlases = [...manifest.assets, ...manifest.diagonalAssets];
+  const decoded = await page.evaluate(async paths => Promise.all(paths.map(async path => {
+    const image = new Image();
+    image.src = path;
+    await image.decode();
+    return [image.naturalWidth, image.naturalHeight];
+  })), atlases.map(asset => `/${asset.runtime.replace('public/', '')}`));
+  expect(decoded).toEqual(atlases.map(asset => [asset.width, asset.height]));
+
+  await page.locator('#build-action').click();
+  await page.locator('[data-furnishing]').first().click();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('dream-caravan:garden:v1:profile:identity-memory')!));
+  expect(saved).toMatchObject({
+    gorHair: 'brown',
+    angelHair: 'white',
+    gorOutfit: 'traveler',
+    angelOutfit: 'celestial',
+  });
+  expect(errors).toEqual([]);
 });

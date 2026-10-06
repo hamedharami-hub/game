@@ -1,139 +1,599 @@
 import * as T from 'three';
-import { regionRadius, decorationPosition, type State, type District, type Furnishing, projects } from './state';
+import {
+  decorationPosition,
+  type Decoration,
+  type District,
+  type Furnishing,
+  type State,
+} from './state';
 
-export const districts:Record<District,{name:string;subtitle:string;description:string;x:number;z:number;color:string;icon:string}>= {
- garden:{name:'باغ مشترک',subtitle:'کاشت و چیدمان آزاد',description:'باغچه را بچین، نور گل‌های شکوفا را جمع کن و زمین را تا ۱۲×۱۲ گسترش بده.',x:-2,z:9,color:'#c6d9a3',icon:'❋'},
- greenhouse:{name:'گلخانهٔ پیوند',subtitle:'ترکیب و کشف گیاه',description:'گل ماه و گل آفتاب را پرورش بده؛ در گلخانه با پیوند آن‌ها سوسن ستاره را کشف کن.',x:20,z:14,color:'#9dd9ca',icon:'✿'},
- home:{name:'خانهٔ ما',subtitle:'از آشیانه تا قصر',description:'با نورهای جمع‌شده آشیانه، خانه و سپس قصر مشترک را بساز. هر ارتقا ظاهر بنا را تغییر می‌دهد.',x:-22,z:-10,color:'#e9c4af',icon:'⌂'},
- village:{name:'میدان دوشاخ‌ها',subtitle:'ساختن برای مردم',description:'چراغ‌های میدان و آبنمای مردم را بساز تا این محله جان بگیرد.',x:24,z:-13,color:'#efd395',icon:'♧'},
- grove:{name:'بیشهٔ روح',subtitle:'جنگل و جویبار نور',description:'از چشمه نور جمع کن؛ پل بیشه را بساز و کنار درخت‌های روح قدم بزن.',x:-21,z:19,color:'#a1bdce',icon:'♤'},
- sanctuary:{name:'نیایشگاه عشق',subtitle:'روح، جادو و پیوند',description:'نور را به حلقه‌های روح بده؛ سه مرحلهٔ بیداری، نیایشگاه را روشن‌تر می‌کند.',x:0,z:-29,color:'#c5b2da',icon:'✧'},
+/** Places on one shared stretch of the Two-Horn planet. */
+export const districts: Record<District, {
+  name: string;
+  subtitle: string;
+  description: string;
+  x: number;
+  z: number;
+  color: string;
+  icon: string;
+}> = {
+  garden: { name: 'باغ مشترک', subtitle: 'کاشت و چیدمان آزاد', description: 'باغی برای کاشتن و وقت‌گذراندن کنار هم.', x: -2, z: 14, color: '#e6a9c2', icon: '❋' },
+  greenhouse: { name: 'گلخانهٔ پیوند', subtitle: 'گوشه‌ای سبز و روشن', description: 'پناهگاهی پر از برگ، گل و نور صبح.', x: 20, z: 14, color: '#91cdb3', icon: '✿' },
+  home: { name: 'خانهٔ ما', subtitle: 'خانه‌ای میان باغ‌ها', description: 'خانهٔ گرم و روشن دوشاخ‌ها.', x: -22, z: -10, color: '#e5bd91', icon: '⌂' },
+  village: { name: 'میدان دوشاخ‌ها', subtitle: 'دیدار و گپ‌وگفت', description: 'میدانی کوچک برای دیدار همسایه‌ها.', x: 24, z: -13, color: '#f0cf84', icon: '♧' },
+  grove: { name: 'بیشهٔ جویبار', subtitle: 'سایه و آب روان', description: 'راهی آرام میان درخت‌ها و آب.', x: -21, z: 19, color: '#8dc9bd', icon: '♤' },
+  sanctuary: { name: 'چمنزار آرام', subtitle: 'نشستن زیر آسمان', description: 'فضایی باز برای نفس‌کشیدن و تماشای آسمان.', x: 0, z: -29, color: '#c2b0dd', icon: '✧' },
 };
 
-/** Shared geometry/materials and instanced woodland keep the extended world affordable. */
-export function createWorld(scene:T.Scene){
- const palette=new Map<string,T.MeshStandardMaterial>();
- const mat=(color:string)=>{let m=palette.get(color);if(!m){m=new T.MeshStandardMaterial({color,roughness:.85});palette.set(color,m);}return m;};
- const box=new T.BoxGeometry(1,1,1),ball=new T.SphereGeometry(1,10,8),cyl=new T.CylinderGeometry(1,1,1,12),cone=new T.ConeGeometry(1,1,12);
- function shape(g:T.BufferGeometry,c:string,x:number,y:number,z:number,sx:number,sy:number,sz:number,parent:T.Object3D=scene){const m=new T.Mesh(g,mat(c));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.receiveShadow=true;parent.add(m);return m;}
- const b=(c:string,x:number,y:number,z:number,sx:number,sy:number,sz:number,p?:T.Object3D)=>shape(box,c,x,y,z,sx,sy,sz,p);
- const orb=(c:string,x:number,y:number,z:number,r:number,p?:T.Object3D)=>shape(ball,c,x,y,z,r,r,r,p);
- const pillar=(c:string,x:number,y:number,z:number,r:number,h:number,p?:T.Object3D)=>shape(cyl,c,x,y,z,r,h,r,p);
- const grass='#a2b68d',ivory='#f4ebd6',stone='#cfccb8',gold='#c5a467',wood='#ad8b6b',purple='#bdacce';
- const land=pillar(grass,0,-.73,0,44,1.3);land.scale.z*=.91;
- // Each district has its own paving, planting and landing spot; paths connect them physically.
- for(const [id,d] of Object.entries(districts)){
-  if(id==='garden')continue;
-  pillar('#d4d4be',d.x,-.015,d.z,7,.08);
-  const from=new T.Vector3(0,0,0),to=new T.Vector3(d.x,0,d.z);
-  for(let i=1;i<=14;i++){const point=from.clone().lerp(to,i/15);const tile=b(ivory,point.x,.015,point.z,1.7,.07,.85);tile.rotation.y=Math.atan2(to.x,to.z);}
-  for(let i=0;i<8;i++){const a=i/8*Math.PI*2;orb(d.color,d.x+Math.cos(a)*6.5,.3,d.z+Math.sin(a)*6.5,.42);}
- }
- // Broad stream, stepping stones and a bridge in the spirit grove.
- for(let i=0;i<14;i++)pillar('#72b6bf',-26+Math.sin(i*.42)*2,.02,11+i*1.3,1.1,.05);
- const bridge=new T.Group();scene.add(bridge);
- for(let i=0;i<7;i++)b(wood,-24+i*.55,.25,18.5,.48,.16,1.7,bridge);
- for(const z of [17.6,19.4]){b(wood,-22.4,.7,z,4,.12,.12,bridge);for(const x of [-24,-21])pillar(wood,x,.55,z,.07,.8,bridge);}
- const well=new T.Group();well.position.set(-21,0,19);scene.add(well);pillar(stone,0,.15,0,1,.3,well);orb('#b6ecdc',0,1.1,0,.65,well);
- const ring=shape(new T.TorusGeometry(1,.045,6,32),gold,0,1.1,0,1,1,1,well);ring.rotation.x=Math.PI/2;
- // Large greenhouse with translucent panes and recognizable planting tables.
- const glass=new T.MeshStandardMaterial({color:'#c9efe1',transparent:true,opacity:.28,roughness:.3,depthWrite:false});
- for(const x of [17,23])for(const z of [10,15])pillar(ivory,x,1.6,z,.10,3.2);
- b(ivory,20,3.15,12.5,6.3,.16,5.3);
- for(const x of [17,23]){const wall=b('#d4ebda',x,1.6,12.5,.08,3,5);wall.material=glass;}
- const roof=shape(cone,'#8fbab0',20,3.9,12.5,4.5,1.6,3.6);roof.rotation.y=Math.PI/4;
- for(const x of [18.3,21.7]){b(wood,x,.7,12.5,1.4,.16,3.4);for(let i=0;i<3;i++){pillar('#be9980',x,.92,11.4+i,.27,.32);orb('#c2dca7',x,1.2,11.4+i,.24);}}
- const hybrid=new T.Group();hybrid.position.set(20,0,16);scene.add(hybrid);pillar(gold,0,.3,0,.7,.6,hybrid);pillar('#729b73',0,1.2,0,.04,1.5,hybrid);
- for(let i=0;i<7;i++){const a=i/7*Math.PI*2;orb('#eea9c9',Math.cos(a)*.35,2,Math.sin(a)*.35,.25,hybrid);}orb('#fff0a4',0,2.1,0,.2,hybrid);
- const greenhouseLight=new T.Group();scene.add(greenhouseLight);for(const x of [17,23])orb('#ffe1a0',x,3.4,15,.23,greenhouseLight);
- // Three physically distinct stages of the shared home; transparent foundations before construction.
- const houses:T.Group[]=[];
- for(let level=0;level<4;level++){
-  const h=new T.Group();h.position.set(-22,0,-12);scene.add(h);houses.push(h);
-  if(level===0){b(stone,0,.1,0,5,.2,4,h);for(const x of [-2.2,2.2])pillar(wood,x,1,1,.07,2,h);b('#ede3c1',0,2,1,4.6,.12,1.8,h);continue;}
-  b(ivory,0,1.6,0,4.5,3.2,3.4,h);const r=shape(cone,'#937a98',0,3.9,0,3.6,1.7,3.2,h);r.rotation.y=Math.PI/4;
-  b(wood,0,1,1.75,.85,2,.1,h);for(const x of [-1.4,1.4])b('#f9d994',x,1.8,1.76,.65,.8,.1,h);
-  if(level>=2){for(const x of [-3,3]){pillar(ivory,x,1.65,0,1.15,3.3,h);shape(cone,purple,x,4,0,1.5,1.5,1.5,h);}b(ivory,0,.12,3,7,.24,2,h);}
-  if(level===3){for(const x of [-3,3]){pillar(ivory,x,4.2,0,.85,2.4,h);shape(cone,gold,x,5.7,0,1.2,1.4,1.2,h);}pillar(ivory,0,5,-1,1,3,h);shape(cone,purple,0,7,-1,1.6,1.5,1.6,h);orb('#ffe6b4',0,8,-1,.18,h);}
- }
- for(const x of [-26,-18]){pillar(stone,x,.4,-7,.4,.8);orb('#a9b984',x,1,-7,.8);}
- // Village: three small homes, market awnings, residents with upright ivory horns.
- for(const [x,z,color] of [[21,-17,'#ddada4'],[27,-17,'#adbfbd'],[29,-11,'#c8b5ce']] as const){b(ivory,x,1.2,z,2.6,2.4,2.5);const r=shape(cone,color,x,3,z,2.3,1.4,2.1);r.rotation.y=Math.PI/4;b(wood,x,.7,z+1.28,.6,1.4,.08);}
- for(const x of [20,28]){b(wood,x,.7,-10,2,.15,1.1);for(const dx of [-1,1])pillar(ivory,x+dx,1.5,-10,.05,3);b('#e7c595',x,2.7,-10,2.3,.1,1.5);}
- const lamps=new T.Group();scene.add(lamps);for(const [x,z] of [[21,-13],[27,-13],[24,-9]]){pillar(wood,x,1.4,z,.07,2.8,lamps);orb('#fff0b3',x,2.8,z,.28,lamps);}
- const fountain=new T.Group();scene.add(fountain);pillar(ivory,24,.18,-13,1.45,.35,fountain);pillar('#8ecdc5',24,.37,-13,1.2,.08,fountain);pillar(ivory,24,1,-13,.3,1.6,fountain);orb('#bceee5',24,1.9,-13,.3,fountain);
- const iColor=(x:number)=>Math.sin(x)>0?'#e0e7e1':'#e7dff0';
- const residents:T.Group[]=[];
- for(const [x,z] of Array.from({length:14},(_,i)=>[24+Math.sin(i*2.399)*5.2,-13+Math.cos(i*2.399)*5.2])){const person=new T.Group();person.position.set(x,0,z);scene.add(person);residents.push(person);shape(cone,iColor(x),0,.75,0,.36,1.45,.29,person);shape(ball,iColor(x),0,1.2,0,.3,.25,.24,person);shape(ball,ivory,0,1.64,0,.23,.3,.21,person);shape(ball,'#d2d5cf',0,1.78,-.045,.245,.2,.21,person);for(const dx of [-.15,.15]){const horn=shape(cone,ivory,dx,2.03,0,.055,.52,.055,person);horn.rotation.z=-dx*.8;}for(const side of [-1,1]){const arm=shape(cyl,ivory,side*.28,1.12,0,.075,.65,.075,person);arm.rotation.z=side*.22;}const collar=shape(new T.TorusGeometry(.2,.025,5,12),gold,0,1.36,0,1,1,1,person);collar.rotation.x=Math.PI/2;person.scale.setScalar(.85+Math.abs(Math.sin(x))*.28);}
- // Open-air sanctuary: clear circular floor, six pillars and three levels of soul rings.
- pillar('#c7bfd3',0,.04,-29,4.5,.1);const rings:T.Mesh[]=[];
- for(let i=0;i<6;i++){const a=i/6*Math.PI*2;pillar(ivory,Math.cos(a)*3.8,1.65,-29+Math.sin(a)*3.8,.18,3.3);orb('#e1d1ee',Math.cos(a)*3.8,3.4,-29+Math.sin(a)*3.8,.24);}
- pillar(ivory,0,.6,-29,.9,1.2);orb('#d4c0e7',0,1.7,-29,.6);
- for(let i=0;i<3;i++){const r=shape(new T.TorusGeometry(1.3+i*.38,.055,6,40),gold,0,2.2+i*.6,-29,1,1,1);r.rotation.x=Math.PI/2;rings.push(r);}
- // The raised garden perimeter follows unlocked land; plants never shift when it expands.
- const gardenFrame=new T.Group();gardenFrame.position.set(-2,0,9);scene.add(gardenFrame);
- const frameEdges=[b(wood,0,.18,0,1,.16,.12,gardenFrame),b(wood,0,.18,0,1,.16,.12,gardenFrame),b(wood,0,.18,0,.12,.16,1,gardenFrame),b(wood,0,.18,0,.12,.16,1,gardenFrame)];
- for(const x of [-6,-2,2]){pillar(ivory,x,1.4,17,.07,2.8);orb('#eac0d2',x,2.9,17,.5);}
- b(ivory,-2,2.65,17,8.2,.12,.16);
- for(let i=0;i<9;i++)orb(i%2?'#f3d69c':'#e5c4db',-6+i,.15,17.3,.16);
-const gardenBench=new T.Group();scene.add(gardenBench);b(wood,-9.5,.5,11,2,.15,.7,gardenBench);b(wood,-9.5,.95,11.35,2,.7,.12,gardenBench);for(const x of [-10.2,-8.8])b(ivory,x,.25,11,.15,.5,.6,gardenBench);
- const pond=new T.Group();scene.add(pond);pillar(ivory,5.7,.13,12,1.4,.25,pond);pillar('#8ed7c9',5.7,.28,12,1.2,.06,pond);for(let i=0;i<5;i++)orb('#e9c7da',5.7+Math.sin(i*2)*.7,.38,12+Math.cos(i*2)*.7,.14,pond);
- // Regions have individual grounds; distant generic forest is replaced by sparse magical trees.
- const roots={} as Record<District,T.Group>,grounds={} as Record<District,T.Mesh>;
- scene.remove(land);
- const contents=[...scene.children].filter(o=>o instanceof T.Mesh||o instanceof T.Group);
- for(const id of Object.keys(districts) as District[]){const d=districts[id];const root=new T.Group();root.name=`region-${id}`;root.position.set(d.x,0,d.z);roots[id]=root;scene.add(root);}
- for(const object of contents){const center=new T.Box3().setFromObject(object).getCenter(new T.Vector3());const id=(Object.keys(districts) as District[]).sort((a,b)=>Math.hypot(center.x-districts[a].x,center.z-districts[a].z)-Math.hypot(center.x-districts[b].x,center.z-districts[b].z))[0];object.position.x-=districts[id].x;object.position.z-=districts[id].z;roots[id].add(object);}
- const motes={} as Record<District,T.Points>;
- const sigils:T.LineSegments[]=[];
- for(const id of Object.keys(districts) as District[]){
-  const root=roots[id],d=districts[id];if(id!=='garden')root.scale.setScalar(1.55);
-  grounds[id]=pillar(id==='grove'?'#536b82':id==='sanctuary'?'#81719b':'#8da59a',0,-.7,0,18,.95,root);
-  const glowMat=new T.MeshStandardMaterial({color:d.color,emissive:d.color,emissiveIntensity:.7,roughness:.6});
-  for(let i=0;i<(id==='grove'?10:5);i++){const angle=id==='garden'?Math.PI+.2+i*.5:i*Math.PI*2/(id==='grove'?10:5)+.3,r=12+(i%3),x=Math.cos(angle)*r,z=Math.sin(angle)*r;const trunk=pillar('#9eafae',x,1.4,z,.13,2.8,root);trunk.rotation.z=Math.sin(i)*.13;const crown=shape(i%3===0?cone:ball,i%2?'#94bdb8':'#b0a6d0',x,3.3,z,1+(i%2)*.4,1.3,.8,root);if(i%3===2)crown.material=glowMat;for(let k=0;k<2;k++)orb(d.color,x+Math.sin(k+i)*.7,3.5+k*.3,z,.13,root);}
-  for(let i=0;i<5;i++){const crystal=shape(new T.OctahedronGeometry(.45),d.color,Math.cos(i*1.7)*10,1.1,Math.sin(i*1.7)*10,.8,1.4,.8,root);crystal.material=glowMat;}
-  const halo=shape(new T.TorusGeometry(4,.04,6,48),'#efd49a',0,.15,0,1,1,1,root);halo.rotation.x=Math.PI/2;halo.material=glowMat;
-  const strokes:number[]=[];for(let i=0;i<10;i++){const a=i/10*Math.PI*2,x=Math.cos(a)*6,z=Math.sin(a)*6;for(const [dx,dz,ex,ez]of [[-.2,0,0,-.4],[0,-.4,.2,0],[-.2,0,.2,0],[0,-.4,0,.3]])strokes.push(x+dx,.2,z+dz,x+ex,.2,z+ez);}const runeGeometry=new T.BufferGeometry();runeGeometry.setAttribute('position',new T.Float32BufferAttribute(strokes,3));const runes=new T.LineSegments(runeGeometry,new T.LineBasicMaterial({color:'#f4dfba',transparent:true,opacity:.9}));root.add(runes);sigils.push(runes);
-  const coords=new Float32Array(36*3);for(let i=0;i<36;i++){coords[i*3]=Math.sin(i*2.3)*13;coords[i*3+1]=.7+(i%7)*.6;coords[i*3+2]=Math.cos(i*1.7)*13;}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.BufferAttribute(coords,3));const points=new T.Points(geom,new T.PointsMaterial({color:d.color,size:.09,transparent:true,opacity:.75,depthWrite:false}));root.add(points);motes[id]=points;
- }
- // Personalized building slots and terraces are rebuilt only when saved layout changes.
- const additions={} as Record<District,T.Group>;let layoutSignature='';let saved:State|null=null;
- for(const id of Object.keys(districts) as District[]){const g=new T.Group();g.name='personal-layout';roots[id].add(g);additions[id]=g;}
- function furnishing(kind:Furnishing,x:number,z:number,p:T.Group,color:string){
-  pillar(stone,x,.1,z,1.5,.2,p);
-  if(kind==='crystal'){const gem=shape(cone,color,x,1.5,z,.65,2.6,.65,p);gem.material=mat(color);const r=shape(new T.TorusGeometry(.9,.05,6,20),gold,x,1.2,z,1,1,1,p);r.rotation.x=Math.PI/2;}
-  if(kind==='pool'){pillar('#85cdc9',x,.23,z,1.25,.08,p);for(let i=0;i<5;i++)orb(color,x+Math.sin(i*1.3),.4,z+Math.cos(i*1.3),.16,p);}
-  if(kind==='arbor'){for(const side of [-1,1])pillar(ivory,x+side,1.4,z,.12,2.8,p);const arch=shape(new T.TorusGeometry(1,.1,6,20,Math.PI),gold,x,2.8,z,1,1,1,p);for(let i=0;i<5;i++)orb(color,x+Math.cos(i*.7),2.8+Math.sin(i*.7),z,.22,p);}
-  if(kind==='pavilion'){for(const dx of [-1,1])for(const dz of [-1,1])pillar(ivory,x+dx,1.5,z+dz,.12,3,p);shape(cone,color,x,3.6,z,2.1,1.4,2.1,p);orb('#ffecb5',x,2.6,z,.3,p);}
- }
- function rebuild(s:State){
-  const signature=JSON.stringify([s.regionLevels,s.decorations,s.worldSeed,s.projects]);if(signature===layoutSignature)return;layoutSignature=signature;saved=s;
-  for(const id of Object.keys(districts) as District[]){const g=additions[id];for(const child of [...g.children]){if(child instanceof T.InstancedMesh)child.dispose();g.remove(child);child.traverse(o=>{if(o instanceof T.Mesh&&! [box,ball,cyl,cone].includes(o.geometry))o.geometry.dispose();});}
-   const scale=roots[id].scale.x,r=regionRadius(id,s.regionLevels[id])/scale;grounds[id].scale.x=grounds[id].scale.z=r;
-   // New land is visibly edged with an illuminated perimeter, and expansion adds terraces.
-   const edge=shape(new T.TorusGeometry(r-.3,.08,5,96),districts[id].color,0,-.15,0,1,1,1,g);edge.rotation.x=Math.PI/2;
-   for(let tier=0;tier<s.regionLevels[id];tier++){const a=tier*2.4+(s.worldSeed%100)*.04,rr=(regionRadius(id,tier)+2)/scale;const x=Math.cos(a)*rr,z=Math.sin(a)*rr;pillar(districts[id].color,x,-.1,z,2.8,.22,g);furnishing(tier%2?'arbor':'crystal',x,z,g,districts[id].color);}
-   for(let i=0;i<8;i++){const a=i*Math.PI/4+(s.worldSeed%100)*.02,rr=(id==='garden'?24:29)/scale;const x=Math.cos(a)*rr,z=Math.sin(a)*rr;shape(ball,id==='grove'?'#748fa8':'#b9cbc0',x,.1,z,2.2,.35,1.4,g);orb(districts[id].color,x,.65,z,.2,g);}
-   const blades=new T.InstancedMesh(cone,mat(id==='grove'?'#668d95':'#7d9c89'),160);const dummy=new T.Object3D();
-   for(let i=0;i<160;i++){const a=i*2.399+(s.worldSeed%997)*.01,rr=(10+(i%13)*1.1)/scale;dummy.position.set(Math.cos(a)*rr,.15,Math.sin(a)*rr);dummy.scale.set(.09,.15+(i%4)*.04,.09);dummy.rotation.set(0,a,.1);dummy.updateMatrix();blades.setMatrixAt(i,dummy.matrix);}g.add(blades);
-   for(const item of s.decorations.filter(d=>d.district===id)){const p=decorationPosition(id,item.slot,s.worldSeed);furnishing(item.kind,p.x/scale,p.z/scale,g,districts[id].color);}
-   const extras=['butterfly','seedvault','moonlab','library','skyterrace','market','gathering','spiritgate','waterfall','memory','constellation'] as const;
-   for(const project of extras.filter(key=>s.projects.includes(key)&&projects[key].district===id)){
-    const n=extras.indexOf(project),x=(n%2?-8:8),z=-10;
-    const group=new T.Group();group.name=project;g.add(group);
-    if(['waterfall','memory'].includes(project)){pillar(ivory,x,1.7,z,.6,3.4,group);const water=shape(ball,'#97e3df',x,1.8,z+.35,.8,1.8,.15,group);water.material=new T.MeshStandardMaterial({color:'#97e3df',emissive:'#67c7cd',emissiveIntensity:.4,transparent:true,opacity:.7});pillar('#7fcbc7',x,.15,z+1,1.6,.1,group);}
-    else if(['moonlab','constellation','gathering'].includes(project)){pillar(stone,x,.15,z,2,.3,group);for(let i=0;i<3;i++){const ring=shape(new T.TorusGeometry(1+i*.3,.05,6,32),gold,x,2,z,1,1,1,group);ring.rotation.set(i*.8,0,i*.6);}orb(districts[id].color,x,2,z,.4,group);}
-    else if(project==='butterfly'){for(let i=0;i<7;i++){const a=i*.9;orb('#f8ddba',x+Math.sin(a)*1.5,1.3+i*.2,z+Math.cos(a)*1.5,.14,group);}}
-    else {furnishing(project==='spiritgate'?'arbor':'pavilion',x,z,group,districts[id].color);if(project==='library'||project==='seedvault')for(let i=0;i<6;i++)b(i%2?gold:purple,x-1+i*.35,.7,z+.8,.18,1,.3,group);}
-   }
-   roots[id].userData.level=s.regionLevels[id];roots[id].userData.decorations=s.decorations.filter(d=>d.district===id).length;
+/**
+ * Builds one continuous, walkable home for the whole game. The named places
+ * are landmarks inside the landscape; activating one never hides the others.
+ */
+export function createWorld(scene: T.Scene) {
+  const materials = new Map<string, T.MeshStandardMaterial>();
+  const material = (color: string, emissive = false) => {
+    const key = `${color}:${emissive}`;
+    let value = materials.get(key);
+    if (!value) {
+      value = new T.MeshStandardMaterial({
+        color,
+        roughness: color === '#8bd5cd' ? 0.3 : 0.86,
+        ...(emissive ? { emissive: color, emissiveIntensity: 0.48 } : {}),
+      });
+      materials.set(key, value);
+    }
+    return value;
+  };
+
+  const geometries = {
+    box: new T.BoxGeometry(1, 1, 1),
+    sphere: new T.SphereGeometry(1, 12, 9),
+    cylinder: new T.CylinderGeometry(1, 1, 1, 12),
+    cone: new T.ConeGeometry(1, 1, 8),
+    torus: new T.TorusGeometry(1, 0.055, 6, 40),
+    flowerHead: new T.IcosahedronGeometry(0.19, 0),
+    flowerStem: new T.CylinderGeometry(0.025, 0.04, 0.55, 5),
+  };
+  const shape = (
+    geometry: T.BufferGeometry,
+    color: string,
+    x: number,
+    y: number,
+    z: number,
+    sx = 1,
+    sy = 1,
+    sz = 1,
+    parent: T.Object3D = scene,
+    glow = false,
+  ) => {
+    const mesh = new T.Mesh(geometry, material(color, glow));
+    mesh.position.set(x, y, z);
+    mesh.scale.set(sx, sy, sz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+  const box = (color: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent?: T.Object3D) =>
+    shape(geometries.box, color, x, y, z, sx, sy, sz, parent);
+  const orb = (color: string, x: number, y: number, z: number, r: number, parent?: T.Object3D, glow = false) =>
+    shape(geometries.sphere, color, x, y, z, r, r, r, parent, glow);
+  const pillar = (color: string, x: number, y: number, z: number, r: number, h: number, parent?: T.Object3D) =>
+    shape(geometries.cylinder, color, x, y, z, r, h, r, parent);
+
+  const roots = {} as Record<District, T.Group>;
+  for (const [id, place] of Object.entries(districts) as [District, typeof districts[District]][]) {
+    const root = new T.Group();
+    root.name = `place-${id}`;
+    root.position.set(place.x, 0, place.z);
+    root.userData.district = id;
+    roots[id] = root;
+    scene.add(root);
   }
- }
- let active:District='garden';
- function activate(id:District){active=id;for(const key of Object.keys(roots) as District[])roots[key].visible=key===id;scene.background=new T.Color(id==='grove'?'#677a95':id==='sanctuary'?'#85749e':'#a8c7c5');scene.fog=new T.Fog(scene.background,55,180);}
- for(const person of residents)person.userData.origin=person.position.clone();
- activate('garden');
- function sync(s:State){rebuild(s);const half=(2+s.plotLevel*2)/2+.10;frameEdges[0].position.z=-half;frameEdges[1].position.z=half;frameEdges[0].scale.x=frameEdges[1].scale.x=half*2;frameEdges[2].position.x=-half;frameEdges[3].position.x=half;frameEdges[2].scale.z=frameEdges[3].scale.z=half*2;houses.forEach((g,i)=>g.visible=i===s.houseLevel);bridge.visible=s.projects.includes('bridge');lamps.visible=s.projects.includes('lamps');fountain.visible=s.projects.includes('fountain');hybrid.visible=s.hybrids;greenhouseLight.visible=s.projects.includes('greenhouse');gardenBench.visible=s.projects.includes('bench');pond.visible=s.projects.includes('pond');rings.forEach((r,i)=>r.visible=i<s.aura);}
- function tick(time:number,reduced:boolean){if(!reduced){well.rotation.y=time*.15;rings.forEach((r,i)=>r.rotation.z=time*(.1+i*.05));if(active==='village')residents.forEach((r,i)=>{r.position.y=.12+Math.sin(time*1.2+i)*.1;const base=r.userData.origin as T.Vector3;r.position.x=base.x+Math.sin(time*.3+i)*.6;r.position.z=base.z+Math.cos(time*.3+i)*.6;r.rotation.y=time*.08+i;});motes[active].rotation.y=time*.012;}}
- return {sync,tick,activate,get ground(){return grounds[active];},root:(id:District)=>roots[id],bounds:()=>({x:districts[active].x,z:districts[active].z,r:regionRadius(active,saved?.regionLevels[active]??0)-1})};
+
+  // A wide green common, with a low coast so the world reads as one large place.
+  const ocean = new T.Mesh(
+    new T.CircleGeometry(450, 64),
+    new T.MeshStandardMaterial({ color: '#55aeb5', roughness: 0.42, metalness: 0.02 }),
+  );
+  ocean.rotation.x = -Math.PI / 2;
+  ocean.position.y = -1.04;
+  ocean.receiveShadow = true;
+  scene.add(ocean);
+  const groundMaterial = material('#779761');
+  const ground = new T.Mesh(new T.CylinderGeometry(87, 88, 0.92, 144), groundMaterial);
+  ground.name = 'two-horn-meadow';
+  ground.position.y = -0.48;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  const shore = shape(new T.TorusGeometry(85.6, 1.75, 8, 144), '#d7b16f', 0, 0.025, 0, 1, 1, 1, scene);
+  shore.rotation.x = Math.PI / 2;
+
+  const pathMaterial = material('#ead39a');
+  const pathPoints: T.Vector3[][] = [];
+  const ribbonGeometry = (points: T.Vector3[], width: number, y: number) => {
+    const positions = new Float32Array(points.length * 6);
+    const indices: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const before = points[Math.max(0, i - 1)];
+      const after = points[Math.min(points.length - 1, i + 1)];
+      const tangent = after.clone().sub(before).setY(0).normalize();
+      const sideX = -tangent.z * width * 0.5;
+      const sideZ = tangent.x * width * 0.5;
+      const point = points[i];
+      const at = i * 6;
+      positions[at] = point.x + sideX;
+      positions[at + 1] = y;
+      positions[at + 2] = point.z + sideZ;
+      positions[at + 3] = point.x - sideX;
+      positions[at + 4] = y;
+      positions[at + 5] = point.z - sideZ;
+      if (i < points.length - 1) {
+        const left = i * 2;
+        indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
+      }
+    }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  };
+  const mainRoutes: [District, District][] = [
+    ['garden', 'greenhouse'], ['garden', 'home'], ['garden', 'village'],
+    ['garden', 'grove'], ['garden', 'sanctuary'],
+  ];
+  for (let i = 0; i < mainRoutes.length; i++) {
+    const [from, to] = mainRoutes[i];
+    const b = new T.Vector3(districts[to].x, 0.035, districts[to].z);
+    const gardenCenter = new T.Vector3(districts[from].x, 0.035, districts[from].z);
+    const delta = b.clone().sub(gardenCenter);
+    const a = gardenCenter.clone().add(delta.clone().setY(0).normalize().multiplyScalar(9.2));
+    const routeDelta = b.clone().sub(a);
+    const side = new T.Vector3(-routeDelta.z, 0, routeDelta.x).normalize().multiplyScalar((i % 2 ? 1 : -1) * (2.5 + i % 3));
+    const control = a.clone().lerp(b, 0.5).add(side);
+    const curve = new T.QuadraticBezierCurve3(a, control, b);
+    const points = curve.getPoints(36);
+    pathPoints.push(points);
+    const edging = new T.Mesh(ribbonGeometry(points, 3.2, 0.015), material('#b8ad8f'));
+    edging.receiveShadow = true;
+    scene.add(edging);
+    const path = new T.Mesh(ribbonGeometry(points, 2.45, 0.03), pathMaterial);
+    path.receiveShadow = true;
+    scene.add(path);
+  }
+
+  // Soft clearings mark places without walls or teleport pads.
+  for (const [id, place] of Object.entries(districts) as [District, typeof districts[District]][]) {
+    const clearing = new T.Mesh(new T.CircleGeometry(8.6, 48), material(id === 'grove' ? '#82ad76' : '#86aa70'));
+    clearing.rotation.x = -Math.PI / 2;
+    clearing.position.set(place.x, 0.009, place.z);
+    clearing.scale.set(1.05, 0.84, 1);
+    clearing.receiveShadow = true;
+    scene.add(clearing);
+  }
+
+  // Flower meadows and tree belts are batched so the larger landscape stays light.
+  let seed = 731;
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const nearRoute = (x: number, z: number, margin: number) => pathPoints.some(points => {
+    for (let i = 0; i < points.length; i += 3) {
+      if (Math.hypot(points[i].x - x, points[i].z - z) < margin) return true;
+    }
+    return false;
+  });
+  const nearPlace = (x: number, z: number, margin: number) =>
+    (Object.values(districts) as typeof districts[District][]).some(place => Math.hypot(place.x - x, place.z - z) < margin);
+
+  const treePositions: { x: number; z: number; size: number; tone: string; lean: number }[] = [];
+  for (let tries = 0; treePositions.length < 150 && tries < 1200; tries++) {
+    const angle = random() * Math.PI * 2;
+    const radius = 30 + random() * 49;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    if (Math.hypot(x, z) > 79 || nearPlace(x, z, 10) || nearRoute(x, z, 4.8)) continue;
+    treePositions.push({
+      x, z, size: 0.68 + random() * 0.72,
+      tone: ['#4c8557', '#61985b', '#80a85f', '#4f927f'][Math.floor(random() * 4)],
+      lean: (random() - 0.5) * 0.16,
+    });
+  }
+  const trunkGeometry = new T.CylinderGeometry(0.16, 0.34, 3.2, 7);
+  const crownGeometry = new T.SphereGeometry(1, 9, 7);
+  const trunks = new T.InstancedMesh(trunkGeometry, material('#79583f'), treePositions.length);
+  const crowns = new T.InstancedMesh(crownGeometry, material('#ffffff'), treePositions.length);
+  trunks.receiveShadow = true;
+  crowns.castShadow = true;
+  crowns.receiveShadow = true;
+  const dummy = new T.Object3D();
+  treePositions.forEach((tree, i) => {
+    dummy.position.set(tree.x, 1.52 * tree.size, tree.z);
+    dummy.scale.setScalar(tree.size);
+    dummy.rotation.set(0, tree.lean, 0);
+    dummy.updateMatrix();
+    trunks.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
+    dummy.scale.set(1.9 * tree.size, 1.75 * tree.size, 1.8 * tree.size);
+    dummy.updateMatrix();
+    crowns.setMatrixAt(i, dummy.matrix);
+    crowns.setColorAt(i, new T.Color(tree.tone));
+  });
+  trunks.instanceMatrix.needsUpdate = true;
+  crowns.instanceMatrix.needsUpdate = true;
+  scene.add(trunks, crowns);
+
+  const flowerLocations: { x: number; z: number; size: number }[] = [];
+  for (let tries = 0; flowerLocations.length < 620 && tries < 5000; tries++) {
+    const angle = random() * Math.PI * 2;
+    const radius = 17 + random() * 60;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    if (Math.hypot(x, z) > 81 || nearPlace(x, z, 7.2) || nearRoute(x, z, 2.2)) continue;
+    flowerLocations.push({ x, z, size: 0.68 + random() * 0.75 });
+  }
+  const stems = new T.InstancedMesh(geometries.flowerStem, material('#658f71'), flowerLocations.length);
+  const petals = new T.InstancedMesh(geometries.flowerHead, material('#ffffff'), flowerLocations.length);
+  stems.castShadow = false;
+  petals.castShadow = false;
+  const petalColors = ['#f3c45e', '#e89aba', '#c9b5f5', '#f1e77b', '#76c8ae'];
+  flowerLocations.forEach((flower, i) => {
+    dummy.position.set(flower.x, 0.29 * flower.size, flower.z);
+    dummy.scale.set(flower.size, flower.size, flower.size);
+    dummy.rotation.set(0, random() * Math.PI * 2, (random() - 0.5) * 0.18);
+    dummy.updateMatrix();
+    stems.setMatrixAt(i, dummy.matrix);
+    dummy.position.y = 0.62 * flower.size;
+    dummy.scale.setScalar(flower.size);
+    dummy.updateMatrix();
+    petals.setMatrixAt(i, dummy.matrix);
+    petals.setColorAt(i, new T.Color(petalColors[Math.floor(random() * petalColors.length)]));
+  });
+  stems.instanceMatrix.needsUpdate = true;
+  petals.instanceMatrix.needsUpdate = true;
+  scene.add(stems, petals);
+
+  // A low pond, a round shared table and benches give the landscape a social heart.
+  const commons = new T.Group();
+  commons.position.set(0, 0, 0);
+  scene.add(commons);
+  const pond = new T.Mesh(new T.CylinderGeometry(5.7, 6.2, 0.22, 48), material('#d1c29c'));
+  pond.position.set(0, 0.1, 0);
+  commons.add(pond);
+  const water = new T.Mesh(new T.CircleGeometry(5.25, 48), material('#8bd5cd'));
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.23;
+  commons.add(water);
+  for (let i = 0; i < 8; i++) {
+    const angle = i * Math.PI / 4;
+    orb('#e9d3a0', Math.cos(angle) * 7.4, 0.32, Math.sin(angle) * 7.4, 0.44, commons);
+    const seat = box('#b28c69', Math.cos(angle) * 9.2, 0.64, Math.sin(angle) * 9.2, 2.2, 0.22, 0.75, commons);
+    seat.rotation.y = -angle;
+    for (const side of [-0.72, 0.72]) pillar('#8f755d', Math.cos(angle) * 9.2 + Math.cos(angle + Math.PI / 2) * side, 0.29, Math.sin(angle) * 9.2 + Math.sin(angle + Math.PI / 2) * side, 0.08, 0.58, commons);
+  }
+  const communityTree = new T.Group();
+  communityTree.position.set(0, 0, -13);
+  commons.add(communityTree);
+  pillar('#8b7259', 0, 3.2, 0, 0.75, 6.4, communityTree);
+  for (let i = 0; i < 5; i++) {
+    const angle = i * Math.PI * 0.4;
+    const limb = pillar('#8b7259', Math.cos(angle) * 1.5, 5.5, Math.sin(angle) * 1.5, 0.22, 3.4, communityTree);
+    limb.rotation.z = Math.cos(angle) * -0.48;
+    limb.rotation.x = Math.sin(angle) * 0.48;
+    orb(['#92b781', '#a6c08c', '#95b6a4'][i % 3], Math.cos(angle) * 2.2, 7.2, Math.sin(angle) * 2.2, 2.5, communityTree);
+  }
+
+  // A small flowering entry arch frames the garden without hanging over the planting bed.
+  const garden = roots.garden;
+  for (const x of [-1.85, 1.85]) {
+    pillar('#a88667', x, 1.28, -6.25, 0.14, 2.55, garden);
+    orb('#e5bb87', x, 2.66, -6.25, 0.19, garden, true);
+  }
+  box('#b28e6d', 0, 2.5, -6.25, 4.05, 0.18, 0.2, garden);
+  for (let i = 0; i < 5; i++) {
+    const vine = orb(['#6c9c64', '#7bac6c', '#e58fa9'][i % 3], -1.55 + i * 0.78, 2.75, -6.25, 0.36, garden);
+    vine.scale.set(0.38, 0.27, 0.32);
+  }
+  for (const x of [-7, 7]) {
+    const bench = box('#b18b68', x, 0.54, 0, 2.8, 0.2, 0.75, garden);
+    box('#b18b68', x, 0.93, 0.37, 2.8, 0.62, 0.16, garden);
+    for (const dx of [-0.95, 0.95]) pillar('#93775c', x + dx, 0.29, 0, 0.07, 0.55, garden);
+    bench.castShadow = false;
+  }
+
+  // Glassy, open-sided greenhouse: a calm landmark, not a gated activity.
+  const greenhouse = roots.greenhouse;
+  for (const x of [-3.5, 3.5]) for (const z of [-2.8, 2.8]) {
+    pillar('#eee5cf', x, 1.65, z, 0.1, 3.3, greenhouse);
+    orb('#f5d68f', x, 3.35, z, 0.2, greenhouse, true);
+  }
+  for (const x of [-3.5, 3.5]) for (const z of [-1.4, 1.4]) {
+    const pane = box('#c9e8d9', x, 1.75, z, 0.08, 2.65, 2.55, greenhouse);
+    pane.material = new T.MeshStandardMaterial({ color: '#c9e8d9', transparent: true, opacity: 0.25, roughness: 0.35, depthWrite: false, side: T.DoubleSide });
+    pane.castShadow = false;
+  }
+  const greenhouseRoof = shape(geometries.cone, '#aec8aa', 0, 3.75, 0, 5.4, 1.6, 4.8, greenhouse);
+  greenhouseRoof.rotation.y = Math.PI / 4;
+  for (const x of [-2.2, 2.2]) {
+    box('#9f7b5d', x, 0.62, 0, 1.55, 0.18, 4.2, greenhouse);
+    for (let i = 0; i < 4; i++) {
+      const stem = pillar('#668f72', x + (i % 2 ? 0.28 : -0.28), 1, -1.35 + i * 0.9, 0.035, 0.9, greenhouse);
+      stem.rotation.z = (i % 2 ? -1 : 1) * 0.16;
+      orb(i % 2 ? '#edb6ce' : '#e7d38f', x + (i % 2 ? 0.28 : -0.28), 1.47, -1.35 + i * 0.9, 0.22, greenhouse);
+    }
+  }
+
+  // A cozy home with a porch, flower boxes and a low chimney.
+  const home = roots.home;
+  const windowGlowMaterial = new T.MeshStandardMaterial({
+    color: '#edd5a0', emissive: '#d99b4e', emissiveIntensity: 0.2,
+    roughness: 0.45, metalness: 0.02,
+  });
+  box('#eadcc2', 0, 1.5, 0, 5.4, 3, 4.2, home);
+  const roof = shape(geometries.cone, '#ad8177', 0, 3.4, 0, 4.5, 2.1, 4.2, home);
+  roof.rotation.y = Math.PI / 4;
+  box('#8c715a', 0, 0.95, 2.12, 1.05, 1.9, 0.12, home);
+  for (const x of [-1.65, 1.65]) {
+    const window = box('#edd5a0', x, 1.85, 2.15, 0.9, 0.82, 0.12, home);
+    window.material = windowGlowMaterial;
+    box('#d8b56f', x, 1.34, 2.22, 1.18, 0.16, 0.35, home);
+  }
+  for (const x of [-2, 2]) pillar('#e8d4b5', x, 1.5, 3.4, 0.12, 3, home);
+  box('#a37c5f', 0, 3.02, 3.4, 4.6, 0.16, 1.9, home);
+  box('#a37c5f', 0, 0.17, 3.65, 5.4, 0.2, 2.4, home);
+  pillar('#9c7861', 1.9, 4.12, -1.35, 0.28, 1.55, home);
+  box('#ede2c9', 0, 0.82, 4.8, 2.8, 0.15, 0.72, home);
+
+  // A small village square around a water bowl; friendly residents wander slowly.
+  const village = roots.village;
+  const residentRoots: T.Group[] = [];
+  const residentColors = ['#c99383', '#829e95', '#a891bc', '#d1aa6e', '#7f9cac', '#c491a8'];
+  for (const [i, [x, z]] of [[-5, -4], [5, -4], [-5, 4], [5, 4]].entries()) {
+    const house = new T.Group();
+    house.position.set(x, 0, z);
+    village.add(house);
+    box('#eee1c8', 0, 1, 0, 3.2, 2, 2.8, house);
+    const rooflet = shape(geometries.cone, residentColors[i], 0, 2.45, 0, 2.55, 1.2, 2.35, house);
+    rooflet.rotation.y = Math.PI / 4;
+    box('#967657', 0, 0.72, 1.43, 0.65, 1.42, 0.08, house);
+    box('#c6d6bd', -0.95, 1.27, 1.46, 0.57, 0.62, 0.08, house);
+  }
+  const fountainBase = pillar('#dfd2b7', 0, 0.2, 0, 2.1, 0.4, village);
+  fountainBase.scale.z = 0.84;
+  pillar('#9bdbd1', 0, 0.44, 0, 1.72, 0.08, village);
+  pillar('#dfd2b7', 0, 0.96, 0, 0.34, 1.1, village);
+  orb('#b5e6da', 0, 1.63, 0, 0.44, village, true);
+  for (const x of [-7, 7]) {
+    pillar('#977960', x, 1.35, 0, 0.1, 2.7, village);
+    orb('#ffe8ae', x, 2.76, 0, 0.31, village, true);
+  }
+  const makeResident = (color: string, x: number, z: number) => {
+    const resident = new T.Group();
+    resident.position.set(x, 0, z);
+    village.add(resident);
+    shape(geometries.cone, color, 0, 0.7, 0, 0.36, 1.4, 0.32, resident);
+    orb(color, 0, 1.24, 0, 0.31, resident);
+    orb('#eee5d6', 0, 1.75, 0, 0.29, resident);
+    orb('#c8b99d', 0, 1.86, -0.04, 0.25, resident);
+    for (const dx of [-0.15, 0.15]) {
+      const horn = shape(geometries.cone, '#f5ead7', dx, 2.18, 0, 0.06, 0.48, 0.06, resident);
+      horn.rotation.z = -dx * 0.8;
+    }
+    for (const side of [-1, 1]) {
+      const arm = pillar('#eee5d6', side * 0.29, 1.05, 0, 0.065, 0.62, resident);
+      arm.rotation.z = side * 0.2;
+    }
+    resident.userData.origin = new T.Vector3(x, 0, z);
+    resident.userData.phase = random() * Math.PI * 2;
+    residentRoots.push(resident);
+  };
+  for (let i = 0; i < 7; i++) {
+    const angle = i * Math.PI * 2 / 7;
+    makeResident(residentColors[i % residentColors.length], Math.cos(angle) * 9.6, Math.sin(angle) * 8.2);
+  }
+
+  // A shallow, winding stream and its timber footbridge.
+  const grove = roots.grove;
+  const streamCurve = new T.CatmullRomCurve3([
+    new T.Vector3(-7, 0.035, -8), new T.Vector3(-4, 0.035, -5),
+    new T.Vector3(2, 0.035, -2), new T.Vector3(3, 0.035, 2),
+    new T.Vector3(-1, 0.035, 6), new T.Vector3(-4, 0.035, 9),
+  ]);
+  const banks = new T.Mesh(new T.TubeGeometry(streamCurve, 42, 1.06, 8, false), material('#c6b891'));
+  const stream = new T.Mesh(new T.TubeGeometry(streamCurve, 42, 0.78, 8, false), material('#8bd5cd'));
+  grove.add(banks, stream);
+  const streamRipples: T.Mesh[] = [];
+  for (let i = 0; i < 4; i++) {
+    const point = streamCurve.getPoint(0.17 + i * 0.2);
+    const ripple = new T.Mesh(
+      new T.TorusGeometry(0.34, 0.022, 5, 24),
+      new T.MeshBasicMaterial({ color: '#e4faf0', transparent: true, opacity: 0.38, depthWrite: false }),
+    );
+    ripple.rotation.x = Math.PI / 2;
+    ripple.position.copy(point);
+    ripple.position.y = 0.09;
+    grove.add(ripple);
+    streamRipples.push(ripple);
+  }
+  for (let i = 0; i < 7; i++) {
+    const plank = box('#a57f60', -1.95 + i * 0.64, 0.32, 1.45, 0.56, 0.16, 3.2, grove);
+    plank.rotation.y = -0.28;
+  }
+  for (const x of [-4, 4]) {
+    pillar('#8c7159', x, 2.7, -3, 0.34, 5.4, grove);
+    for (const y of [4.8, 5.45, 6.1]) {
+      const branch = pillar('#8c7159', x * 0.62, y, -3, 0.11, 3.5, grove);
+      branch.rotation.z = x > 0 ? 0.42 : -0.42;
+    }
+    orb('#91b78a', x * 0.7, 6.35, -3, 2.3, grove);
+    orb('#a7c394', x * 1.1, 5.75, -3.1, 1.45, grove);
+  }
+  for (let i = 0; i < 9; i++) {
+    const t = (i + 0.5) / 9;
+    const point = streamCurve.getPoint(t);
+    const stone = orb('#d8c9a8', point.x + Math.sin(i * 3) * 1.2, 0.14, point.z, 0.34, grove);
+    stone.scale.set(1.55, 0.38, 1);
+    stone.castShadow = false;
+  }
+
+  // The open meadow has a ring of soft seats and a low shared fire bowl.
+  const sanctuary = roots.sanctuary;
+  const circle = new T.Mesh(new T.CircleGeometry(5.6, 48), material('#a9b493'));
+  circle.rotation.x = -Math.PI / 2;
+  circle.position.y = 0.02;
+  sanctuary.add(circle);
+  const ring = shape(geometries.torus, '#dfc78e', 0, 0.18, 0, 5.2, 0.78, 5.2, sanctuary);
+  ring.rotation.x = Math.PI / 2;
+  pillar('#d3c29f', 0, 0.3, 0, 1.35, 0.48, sanctuary);
+  orb('#f1d58d', 0, 0.82, 0, 0.48, sanctuary, true);
+  for (let i = 0; i < 8; i++) {
+    const angle = i * Math.PI / 4;
+    const seat = box('#b08a67', Math.cos(angle) * 7.6, 0.48, Math.sin(angle) * 7.6, 2.3, 0.19, 0.74, sanctuary);
+    seat.rotation.y = -angle;
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = (i - 2) * 2.2;
+    const stalk = pillar('#6d9875', x, 0.68, -5.8, 0.045, 1.35, sanctuary);
+    stalk.rotation.z = (i - 2) * -0.12;
+    orb(['#eed089', '#e9b7ce', '#d8d3ed'][i % 3], x, 1.4, -5.8, 0.2, sanctuary);
+  }
+
+  // Local decorations persist in their chosen clearing and are rebuilt only on edits.
+  const furnishings: Record<Furnishing, string> = {
+    crystal: '#b9d7d1', arbor: '#d7bd89', pool: '#8bd5cd', pavilion: '#c4afd6',
+  };
+  const additions = {} as Record<District, T.Group>;
+  for (const id of Object.keys(districts) as District[]) {
+    additions[id] = new T.Group();
+    additions[id].name = 'personal-decorations';
+    roots[id].add(additions[id]);
+  }
+  let signature = '';
+  const furnishing = (decoration: Decoration, parent: T.Group, seedValue: number) => {
+    const pos = decorationPosition(decoration.district, decoration.slot, seedValue);
+    const x = pos.x * 0.43;
+    const z = pos.z * 0.43;
+    const color = furnishings[decoration.kind];
+    if (decoration.kind === 'crystal') {
+      const gem = shape(geometries.cone, color, x, 1.25, z, 0.8, 2.2, 0.8, parent, true);
+      gem.rotation.y = decoration.slot * 0.4;
+      const glint = shape(geometries.torus, '#f6dfaa', x, 0.88, z, 1, 1, 1, parent, true);
+      glint.rotation.x = Math.PI / 2;
+    } else if (decoration.kind === 'pool') {
+      pillar('#d8ccb2', x, 0.15, z, 1.05, 0.28, parent);
+      const pool = new T.Mesh(new T.CircleGeometry(0.88, 24), material('#8bd5cd'));
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.set(x, 0.31, z);
+      parent.add(pool);
+      for (let i = 0; i < 4; i++) orb('#f3dfa7', x + Math.sin(i * 1.6) * 0.55, 0.4, z + Math.cos(i * 1.6) * 0.55, 0.11, parent);
+    } else if (decoration.kind === 'arbor') {
+      for (const side of [-1, 1]) pillar('#eee1c8', x + side * 1.1, 1.35, z, 0.1, 2.7, parent);
+      const arch = shape(geometries.torus, color, x, 2.7, z, 1.15, 1.15, 1.15, parent);
+      arch.rotation.x = Math.PI / 2;
+      for (let i = 0; i < 5; i++) orb(i % 2 ? '#e8b4cc' : '#edcf8b', x - 1.2 + i * 0.6, 2.9, z, 0.16, parent);
+    } else {
+      for (const dx of [-1, 1]) for (const dz of [-1, 1]) pillar('#eee1c8', x + dx, 1.35, z + dz, 0.1, 2.7, parent);
+      const roof = shape(geometries.cone, color, x, 2.9, z, 2.35, 1.4, 2.35, parent);
+      roof.rotation.y = Math.PI / 4;
+      orb('#f2d792', x, 1.7, z, 0.22, parent, true);
+    }
+  };
+  const rebuild = (state: State) => {
+    const nextSignature = JSON.stringify([state.decorations, state.worldSeed]);
+    if (nextSignature === signature) return;
+    signature = nextSignature;
+    for (const id of Object.keys(districts) as District[]) {
+      const group = additions[id];
+      group.clear();
+      for (const item of state.decorations.filter(d => d.district === id)) furnishing(item, group, state.worldSeed);
+      roots[id].userData.decorations = state.decorations.filter(d => d.district === id).length;
+    }
+  };
+
+  // Fireflies are a single animated point batch; reduced-motion mode freezes them.
+  const fireflyPositions = new Float32Array(72 * 3);
+  for (let i = 0; i < 72; i++) {
+    const angle = random() * Math.PI * 2;
+    const radius = 18 + random() * 44;
+    fireflyPositions[i * 3] = Math.cos(angle) * radius;
+    fireflyPositions[i * 3 + 1] = 0.5 + random() * 2.2;
+    fireflyPositions[i * 3 + 2] = Math.sin(angle) * radius;
+  }
+  const fireflyGeometry = new T.BufferGeometry();
+  fireflyGeometry.setAttribute('position', new T.BufferAttribute(fireflyPositions, 3));
+  const fireflies = new T.Points(fireflyGeometry, new T.PointsMaterial({
+    color: '#fff0b0', size: 0.14, transparent: true, opacity: 0.66,
+    depthWrite: false, blending: T.AdditiveBlending,
+  }));
+  scene.add(fireflies);
+  const glowMats = [...materials.values()].filter(m => m.emissiveIntensity > 0);
+  let active: District = 'garden';
+
+  function activate(id: District) {
+    active = id;
+    // All landmarks stay in view on the same ground; active only tracks focus.
+  }
+
+  function sync(state: State) {
+    rebuild(state);
+  }
+
+  function tick(time: number, reduced: boolean) {
+    if (reduced) return;
+    residentRoots.forEach((person, i) => {
+      const origin = person.userData.origin as T.Vector3;
+      const phase = person.userData.phase as number;
+      person.position.x = origin.x + Math.sin(time * 0.22 + phase) * 0.45;
+      person.position.z = origin.z + Math.cos(time * 0.22 + phase) * 0.35;
+      person.position.y = 0.035 + Math.sin(time * 1.35 + i) * 0.035;
+      person.rotation.y = Math.sin(time * 0.18 + phase) * 0.2;
+    });
+    // A slow shared breeze is enough to make the meadows feel alive.
+    treePositions.forEach((tree, i) => {
+      dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
+      dummy.scale.set(1.9 * tree.size, 1.75 * tree.size, 1.8 * tree.size);
+      dummy.rotation.set(0, tree.lean, Math.sin(time * 0.55 + i * 0.41) * 0.018);
+      dummy.updateMatrix();
+      crowns.setMatrixAt(i, dummy.matrix);
+    });
+    crowns.instanceMatrix.needsUpdate = true;
+    flowerLocations.forEach((flower, i) => {
+      const breeze = Math.sin(time * 1.2 + i * 0.29) * 0.08;
+      dummy.position.set(flower.x, 0.29 * flower.size, flower.z);
+      dummy.scale.set(flower.size, flower.size, flower.size);
+      dummy.rotation.set(0, 0, breeze);
+      dummy.updateMatrix();
+      stems.setMatrixAt(i, dummy.matrix);
+      dummy.position.y = 0.62 * flower.size;
+      dummy.rotation.z = breeze * 0.7;
+      dummy.updateMatrix();
+      petals.setMatrixAt(i, dummy.matrix);
+    });
+    stems.instanceMatrix.needsUpdate = true;
+    petals.instanceMatrix.needsUpdate = true;
+    water.scale.set(1 + Math.sin(time * 0.72) * 0.012, 1, 1 + Math.cos(time * 0.61) * 0.012);
+    streamRipples.forEach((ripple, i) => {
+      const pulse = (Math.sin(time * 1.3 + i * 1.8) + 1) / 2;
+      ripple.scale.setScalar(0.8 + pulse * 0.65);
+      (ripple.material as T.MeshBasicMaterial).opacity = 0.18 + pulse * 0.25;
+    });
+    windowGlowMaterial.emissiveIntensity = 0.15 + Math.sin(time * 0.7) * 0.025;
+    fireflies.rotation.y = time * 0.008;
+    for (const [i, mat] of glowMats.entries()) mat.emissiveIntensity = 0.34 + (Math.sin(time * 1.3 + i * 0.73) + 1) * 0.12;
+  }
+
+  function bounds() {
+    return { x: 0, z: 0, r: 82 };
+  }
+
+  return {
+    sync,
+    tick,
+    activate,
+    get ground() { return ground; },
+    root: (id: District) => roots[id],
+    bounds,
+  };
 }

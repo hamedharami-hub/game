@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0 — One living world
+- Replaced the planet-hopping quest flow with direct entry to one broad, connected Two-Horn landscape.
+- Simplified the main actions to planting, arranging the garden, and spending time with local companions.
+- Made all flowers and small garden builds free; flowers grow in 1–2 minutes and begin a new bloom after harvest.
+- Added gentle responses to planting, breeze-swaying trees and flowers, moving water, fireflies, warm house lights, and companion gestures.
+- Preserved profile saves and character appearance choices; earlier gardens open into the full planting area.
+- Removed the quest checklist, portal/map travel, resource costs and opening story dialog from normal play.
+
 ## v0.2.0 — Wardrobe and independent handoff
 - Three independent hair choices and three outfits per actor; nine looks per actor, eight directions each.
 - Eight painted directions per look, with short frame crossfade and reduced-motion support.
