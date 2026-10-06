@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "npm run verify-art && tsc --noEmit && vite build && node scripts/standalone.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --experimental-strip-types --test src/state.test.ts src/ambience.test.ts",
+    "test": "node --experimental-strip-types --test src/state.test.ts src/ambience.test.ts src/audio.test.ts src/particles.test.ts src/interactions.test.ts src/vignette.test.ts src/fauna.test.ts",
     "verify-art": "node scripts/verify-art.mjs"
   },
   "dependencies": {

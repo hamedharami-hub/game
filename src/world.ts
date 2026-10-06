@@ -7,6 +7,13 @@ import {
   type State,
 } from './state';
 
+/** Calculates spherical planet elevation drop to produce rolling planetary horizon. */
+export function planetElevation(x: number, z: number): number {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
+  const d2 = x * x + z * z;
+  return -0.00032 * d2;
+}
+
 /** Places on one shared stretch of the Two-Horn planet. */
 export const districts: Record<District, {
   name: string;
@@ -85,7 +92,7 @@ export function createWorld(scene: T.Scene) {
   for (const [id, place] of Object.entries(districts) as [District, typeof districts[District]][]) {
     const root = new T.Group();
     root.name = `place-${id}`;
-    root.position.set(place.x, 0, place.z);
+    root.position.set(place.x, planetElevation(place.x, place.z), place.z);
     root.userData.district = id;
     roots[id] = root;
     scene.add(root);
@@ -97,11 +104,24 @@ export function createWorld(scene: T.Scene) {
     new T.MeshStandardMaterial({ color: '#55aeb5', roughness: 0.42, metalness: 0.02 }),
   );
   ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = -1.04;
+  ocean.position.y = -2.2;
   ocean.receiveShadow = true;
   scene.add(ocean);
   const groundMaterial = material('#779761');
-  const ground = new T.Mesh(new T.CylinderGeometry(87, 88, 0.92, 144), groundMaterial);
+  const groundGeom = new T.CylinderGeometry(87, 88, 0.92, 144, 16);
+  const posAttr = groundGeom.getAttribute('position') as T.BufferAttribute;
+  for (let i = 0; i < posAttr.count; i++) {
+    const vx = posAttr.getX(i);
+    const vy = posAttr.getY(i);
+    const vz = posAttr.getZ(i);
+    if (vy > 0) {
+      posAttr.setY(i, vy + planetElevation(vx, vz));
+    }
+  }
+  posAttr.needsUpdate = true;
+  groundGeom.computeVertexNormals();
+
+  const ground = new T.Mesh(groundGeom, groundMaterial);
   ground.name = 'two-horn-meadow';
   ground.position.y = -0.48;
   ground.receiveShadow = true;

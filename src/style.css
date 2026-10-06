@@ -169,11 +169,18 @@ header {
   background: var(--forest);
 }
 
-#plant-action, #build-action, #people-action {
+#plant-action, #build-action, #people-action, #flight-toggle-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
+}
+
+#flight-toggle-btn { color: var(--forest-deep); }
+#flight-toggle-btn[aria-pressed="true"] {
+  color: #fffdf5;
+  background: linear-gradient(135deg, #3a6c51, #244837);
+  box-shadow: 0 4px 14px rgb(29 54 40 / 30%);
 }
 
 #camera-view { color: var(--forest-deep); }
@@ -290,6 +297,25 @@ footer > * { pointer-events: auto; }
 .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 19px; }
 .actions button { flex: 1 1 140px; min-width: 0; }
 
+.companion-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+  flex: 1 1 100%;
+  margin-bottom: 6px;
+}
+
+.companion-actions button {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .fallback { width: min(440px, 92vw); margin: 20vh auto; padding: 28px; border-radius: 24px; }
 
 /* Planting stays close to the world and keeps its controls quiet and tactile. */
@@ -349,7 +375,7 @@ footer > * { pointer-events: auto; }
   .brand small { display: none; }
   .action-bar, .header-actions { gap: 5px; }
   .action-bar { flex: 0 1 auto; }
-  .action-bar button, .header-actions button, #camera-view {
+  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn {
     min-width: 42px;
     min-height: 42px;
     padding: 7px 9px;
@@ -378,12 +404,21 @@ footer > * { pointer-events: auto; }
 
 @media (max-width: 430px) {
   header { right: 7px; left: 7px; gap: 5px; }
-  .brand { min-width: 40px; min-height: 39px; padding: 6px 9px; font-size: 0; flex: 0 0 auto; }
-  .brand::first-letter { font-size: 19px; }
-  .brand > span { font-size: 11px; }
-  .action-bar, .header-actions { gap: 4px; }
-  .action-bar button, .header-actions button, #camera-view { min-width: 0; min-height: 42px; padding: 6px 7px; font-size: 10px; white-space: nowrap; }
+  .brand { width: 40px; min-width: 40px; min-height: 39px; padding: 6px 0; justify-content: center; flex: 0 0 auto; }
+  .brand > span:not(.brand-mark) { display: none; }
+  .brand-mark { margin: 0; }
+  .action-bar, .header-actions { gap: 4px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
+  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn { min-width: 0; min-height: 42px; padding: 6px 6px; font-size: 10px; white-space: nowrap; flex: 0 1 auto; }
   .action-bar { flex: 1 1 auto; }
+  .companion-actions {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .companion-actions button {
+    min-height: 42px;
+    padding: 6px 4px;
+    font-size: 11px;
+  }
   #ambient-status { top: calc(57px + var(--safe-top)); max-width: calc(100vw - 24px); font-size: 10px; }
   #interact { bottom: calc(84px + var(--safe-bottom)); min-width: 164px; max-width: calc(100vw - 26px); padding: 10px 15px; }
   .garden-panel { max-height: min(64dvh, 560px); }
@@ -397,7 +432,7 @@ footer > * { pointer-events: auto; }
   .brand { width: 40px; justify-content: center; }
   .brand > span:not(.brand-mark) { display: none; }
   .action-bar, .header-actions { justify-content: space-between; }
-  .action-bar button, .header-actions button, #camera-view { padding-inline: 5px; font-size: 9px; }
+  .action-bar button, .header-actions button, #camera-view, #flight-toggle-btn { padding-inline: 5px; font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -408,3 +443,54 @@ footer > * { pointer-events: auto; }
   :root { --ink: #14271c; --muted: #394e40; --glass: #fffdf4; }
   button, .glass, #ambient-status { border-color: #405849; }
 }
+
+.romance-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 85;
+  opacity: 0;
+  transition: opacity 500ms ease-in-out;
+}
+.romance-vignette.active {
+  opacity: 1;
+}
+.romance-vignette-card {
+  max-width: 280px;
+  max-height: 380px;
+  border-radius: 24px;
+  box-shadow: 0 0 50px rgba(255, 230, 160, 0.45), 0 12px 36px rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(255, 245, 200, 0.65);
+  background: rgba(255, 250, 240, 0.2);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  transform: scale(0.95);
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.romance-vignette.active .romance-vignette-card {
+  transform: scale(1.0);
+}
+.romance-vignette-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 22px;
+}
+.romance-vignette-caption {
+  margin-top: 14px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #fff9ea;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+  background: rgba(30, 45, 36, 0.65);
+  padding: 6px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 245, 210, 0.35);
+  letter-spacing: 0.02em;
+}
+

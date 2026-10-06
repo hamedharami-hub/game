@@ -3,10 +3,37 @@ import './style.css';
 import { directionFrame } from './directions';
 import { createGarden } from './garden';
 import { sampleAmbience } from './ambience';
-import { initialState, decodeSave, storageKey, placeDecoration, decorationPosition, growthStage, regionSlots, furnishings, species, setAppearance, hairColors, outfits, type Furnishing, type HairColor, type Outfit } from './state';
+import { initialState, decodeSave, storageKey, placeDecoration, decorationPosition, growthStage, regionSlots, furnishings, species, setAppearance, hairColors, outfits, type Furnishing, type HairColor, type Outfit, type District } from './state';
 import type { State } from './state';
 import { lookAssets, diagonalAssets } from './appearance';
-import { createWorld } from './world';
+import { createWorld, districts } from './world';
+import { createAudioEngine, type AudioEngine } from './audio';
+import { createVisualFXSystem, computeNightIntensity, calculateShadowParams, type VisualFXSystem } from './particles';
+import {
+  calculateSideBySideOffset,
+  calculateFlightAltitude,
+  calculateCameraFocusY,
+  calculateBankingRoll,
+  isCompanionIdle,
+  computeHandPositions,
+  isHandHoldDetached,
+  calculateWingFlapAngle,
+  calculateEmbraceTransform,
+  planetElevation,
+  type FlightState,
+} from './interactions';
+import {
+  triggerVignette,
+  updateVignetteState,
+  createVignetteState,
+  type VignetteState,
+} from './vignette';
+import { createFaunaMeshGroup } from './fauna';
+
+const audioEngine = createAudioEngine();
+if (typeof window !== 'undefined') {
+  (window as unknown as { audioEngine: AudioEngine }).audioEngine = audioEngine;
+}
 
 const gameSaveKey = storageKey(new URLSearchParams(location.search).get('profile'));
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -18,6 +45,8 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
       <button id="plant-action" class="glass" aria-label="کاشت گل">کاشت</button>
       <button id="build-action" class="glass" aria-label="چیدمان باغ">چیدمان</button>
       <button id="people-action" class="glass" aria-label="دیدار با همراهان">همراه‌ها</button>
+      <button id="flight-toggle-btn" class="glass" aria-pressed="false" aria-label="پرواز دونفره">پرواز</button>
+      <button id="world-map-action" class="glass" aria-label="نقشهٔ سیاره">سیاره 🧭</button>
       <button id="camera-view" class="glass" aria-pressed="false" aria-label="تغییر نمای دوربین">نمای باز</button>
     </nav>
   </header>
@@ -26,6 +55,7 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
     <button id="interact" class="primary" aria-label="صحبت با گوراستاخ" title="صحبت با گوراستاخ" disabled>سلام</button>
   </footer>
   <div id="overlay" hidden></div>
+  <div id="romance-vignette" class="romance-vignette" aria-hidden="true"></div>
 </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
 const gameRoot = document.querySelector<HTMLElement>('main')!;
@@ -138,6 +168,7 @@ function noticeFreshBlooms(now: number) {
     const previous = observedPlantStages.get(plant.id);
     observedPlantStages.set(plant.id, stage);
     if (previous !== undefined && previous < 3 && stage === 3) {
+      audioEngine.playBloomChime();
       const flower = new T.Vector3(-2 + plant.col - 3.5, 0, 14 + plant.row - 3.5);
       queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار شکوفهٔ تازه مکث کرد.', 1.2);
     }
@@ -221,6 +252,7 @@ softFill.position.set(20, 12, -14);
 scene.add(softFill);
 
 const districtWorld = createWorld(scene);
+const fauna = createFaunaMeshGroup(scene);
 const cameraFocus = new T.Vector3(-2, 0, 14);
 const worldBounds = () => districtWorld.bounds();
 const ambienceTarget = new T.Color('#a4cfb6');
@@ -260,63 +292,11 @@ const rainStreaks = new T.LineSegments(rainGeometry, rainMaterial);
 rainStreaks.visible = false;
 scene.add(rainStreaks);
 
-type AmbientAudio = { context: AudioContext; wind: GainNode; rain: GainNode };
-let ambientAudio: AmbientAudio | null = null;
-let lastAudioUpdate = 0;
-function enableAmbientAudio() {
-  if (ambientAudio || !window.AudioContext) return;
-  try {
-    const context = new AudioContext();
-    const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
-    const noise = buffer.getChannelData(0);
-    let seed = 0x731a4d;
-    for (let i = 0; i < noise.length; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      noise[i] = (seed / 4294967296 - 0.5) * 0.48;
-    }
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const master = context.createGain();
-    master.gain.value = 0.55;
-    master.connect(context.destination);
-
-    const windFilter = context.createBiquadFilter();
-    windFilter.type = 'lowpass';
-    windFilter.frequency.value = 520;
-    const wind = context.createGain();
-    wind.gain.value = 0;
-    source.connect(windFilter).connect(wind).connect(master);
-
-    const rainFilter = context.createBiquadFilter();
-    rainFilter.type = 'highpass';
-    rainFilter.frequency.value = 1350;
-    const rain = context.createGain();
-    rain.gain.value = 0;
-    source.connect(rainFilter).connect(rain).connect(master);
-
-    source.start();
-    ambientAudio = { context, wind, rain };
-    void context.resume().catch(() => {});
-  } catch { /* Audio is optional; the visual atmosphere remains complete. */ }
+function unlockAudio() {
+  audioEngine.enable();
 }
-
-function updateAmbientAudio(windStrength: number, rainStrength: number, now: number) {
-  if (!ambientAudio || now - lastAudioUpdate < 450) return;
-  lastAudioUpdate = now;
-  const at = ambientAudio.context.currentTime;
-  ambientAudio.wind.gain.setTargetAtTime(.0035 + windStrength * .0045, at, .7);
-  ambientAudio.rain.gain.setTargetAtTime(rainStrength * .008, at, .9);
-}
-
-document.addEventListener('pointerdown', enableAmbientAudio, { once: true, passive: true });
-window.addEventListener('keydown', enableAmbientAudio, { once: true });
-document.addEventListener('visibilitychange', () => {
-  if (!ambientAudio) return;
-  if (document.hidden) void ambientAudio.context.suspend().catch(() => {});
-  else void ambientAudio.context.resume().catch(() => {});
-});
+document.addEventListener('pointerdown', unlockAudio, { passive: true });
+window.addEventListener('keydown', unlockAudio);
 
 const atlasCache = new Map<string, T.Texture>();
 const visualActors: T.Group[] = [];
@@ -366,6 +346,7 @@ function character(isAngel: boolean) {
   group.userData.ghostTexture = ghostTexture;
   sprite.renderOrder = 2;
   ghost.renderOrder = 1;
+
   visualActors.push(group);
   return group;
 }
@@ -375,6 +356,16 @@ scene.add(angel);
 const gor = character(false);
 gor.position.set(-2.25, 0, 14.3);
 scene.add(gor);
+
+const fx = createVisualFXSystem(scene, { camera, reducedMotion });
+if (typeof window !== 'undefined' && window.matchMedia) {
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
+    fx.setReducedMotion?.(event.matches);
+  });
+}
+if (typeof window !== 'undefined') {
+  (window as unknown as { fx: VisualFXSystem }).fx = fx;
+}
 
 function faceDirection(actor: T.Group, direction: T.Vector3) {
   actor.userData.direction.copy(direction);
@@ -452,16 +443,218 @@ function openBuild() {
 }
 $('build-action').onclick = openBuild;
 
+// ============================================================================
+// Couple Traversal & Flight Mechanics State
+// ============================================================================
+let handHoldingActive = false;
+let handSideSign = 1; // +1 right side, -1 left side
+let walkDistance = 0;
+let footstepAccumulator = 0;
+let leftFoot = false;
+
+let flightState: FlightState = 'grounded';
+let baseAltitude = 0;
+let targetAltitude = 0;
+let currentHeadingAngle = 0;
+let bankAngle = 0;
+let lastHeadingAngle = 0;
+
+// Companion Idle Awareness State
+let lastPlayerActiveTime = performance.now();
+let idleReactionActive = false;
+type IdleReactionType = 'reach' | 'glance' | 'sit';
+let idleReactionType: IdleReactionType = 'reach';
+const IDLE_AWARENESS_THRESHOLD_MS = 4500;
+const IDLE_AFFECTION_MAX_DISTANCE = 4.5;
+
+const angelHandPos = new T.Vector3();
+const gorHandPos = new T.Vector3();
+const characterMidpoint = new T.Vector3();
+
+function markPlayerActive(now: number = performance.now()) {
+  lastPlayerActiveTime = now;
+  if (idleReactionActive) {
+    idleReactionActive = false;
+    if (gor.userData.isIdleAffection) {
+      gor.userData.isIdleAffection = false;
+      gor.userData.emoteUntil = 0;
+      gor.userData.emoteKind = 'none';
+    }
+  }
+}
+
+function updateCompanionIdleAwareness(now: number) {
+  if (reducedMotion || !overlay.hidden || ownGarden.editing) {
+    lastPlayerActiveTime = now;
+    return;
+  }
+  const isPlayerMoving = Boolean(
+    target !== null ||
+    keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d') ||
+    keys.has('ArrowUp') || keys.has('ArrowDown') || keys.has('ArrowLeft') || keys.has('ArrowRight')
+  );
+  if (isPlayerMoving) {
+    markPlayerActive(now);
+    return;
+  }
+  if (isCompanionIdle(lastPlayerActiveTime, now, IDLE_AWARENESS_THRESHOLD_MS) && !idleReactionActive) {
+    triggerCompanionIdleReaction(now);
+  }
+}
+
+function triggerCompanionIdleReaction(now: number) {
+  const dist = angel.position.distanceTo(gor.position);
+  if (dist > IDLE_AFFECTION_MAX_DISTANCE) return;
+
+  idleReactionActive = true;
+  gor.userData.isIdleAffection = true;
+
+  const toAngel = angel.position.clone().sub(gor.position).setY(0);
+  if (toAngel.lengthSq() > 0.01) {
+    faceDirection(gor, toAngel.normalize());
+  }
+
+  const reactions: IdleReactionType[] = ['reach', 'glance', 'sit'];
+  idleReactionType = reactions[Math.floor(Math.random() * reactions.length)];
+
+  if (idleReactionType === 'reach') {
+    gor.userData.emoteKind = 'wave';
+    gor.userData.emoteUntil = now + 4200;
+    setStatus('گوراستاخ با لبخندی آرام دستش را به سویت دراز کرد.');
+    const mid = angel.position.clone().add(gor.position).multiplyScalar(0.5);
+    fx.spawnFootstepGlow(mid);
+  } else if (idleReactionType === 'glance') {
+    gor.userData.emoteKind = 'wave';
+    gor.userData.emoteUntil = now + 3500;
+    setStatus('گوراستاخ با نگاهی گرم و پرمهر به تو چشم دوخته است.');
+  } else if (idleReactionType === 'sit') {
+    gor.userData.emoteKind = 'sit';
+    gor.userData.emoteUntil = now + 9000;
+    setStatus('گوراستاخ در سکوت کنارت نشست تا با هم استراحت کنید.');
+  }
+}
+
+function toggleHandHolding(force?: boolean) {
+  cancelCompanionMoments();
+  markPlayerActive();
+  const next = force !== undefined ? force : !handHoldingActive;
+  if (next === handHoldingActive) return;
+  handHoldingActive = next;
+  if (handHoldingActive) {
+    audioEngine.playHandholdChime();
+    const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
+    if (heading.lengthSq() < 1e-4) heading.set(0, 0, 1);
+    heading.normalize();
+    const rightNormal = new T.Vector3(heading.z, 0, -heading.x).normalize();
+    const toGor = gor.position.clone().sub(angel.position).setY(0);
+    handSideSign = toGor.dot(rightNormal) >= 0 ? 1 : -1;
+    const offset = calculateSideBySideOffset(heading, 0.90);
+    gor.position.x = angel.position.x + offset.x * handSideSign;
+    gor.position.z = angel.position.z + offset.z * handSideSign;
+    faceDirection(gor, heading);
+    const hands = computeHandPositions(angel.position, gor.position);
+    angelHandPos.set(hands.angelHand.x, hands.angelHand.y, hands.angelHand.z);
+    gorHandPos.set(hands.gorHand.x, hands.gorHand.y, hands.gorHand.z);
+    fx.setHandHoldConnection(angelHandPos, gorHandPos, true);
+    setStatus('دست‌های یکدیگر را گرفتید؛ گام‌هایتان یکی شد.');
+  } else {
+    fx.setHandHoldConnection(angel.position, gor.position, false);
+    setStatus('دست‌ها با آرامش رها شدند.');
+  }
+}
+
+function toggleFlight(force?: boolean) {
+  if (ownGarden.editing) return;
+  cancelCompanionMoments();
+  markPlayerActive();
+  const isFlying = flightState !== 'grounded';
+  const shouldFly = force !== undefined ? force : !isFlying;
+  if (shouldFly === isFlying) return;
+
+  const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
+  if (shouldFly) {
+    flightState = 'ascending';
+    targetAltitude = 4.0;
+    audioEngine.playFlightTakeoff();
+    flightBtn?.setAttribute('aria-pressed', 'true');
+    if (flightBtn) flightBtn.textContent = 'فرود';
+    fx.updateRibbonTrails(angel.position, gor.position, true);
+    setStatus('پرواز دونفره آغاز شد؛ با کلیدهای جهت‌دار اوج بگیرید.');
+  } else {
+    flightState = 'descending';
+    targetAltitude = 0.0;
+    flightBtn?.setAttribute('aria-pressed', 'false');
+    if (flightBtn) flightBtn.textContent = 'پرواز';
+    setStatus('فرود نرم بر پهنهٔ دشت...');
+  }
+}
+
+let activeEmbraceStart = 0;
+const EMBRACE_DURATION_MS = 3200;
+let vignetteState: VignetteState = createVignetteState();
+const vignetteEl = $('romance-vignette');
+
+function showRomanceVignette(assetIndex: number = 0) {
+  if (reducedMotion) return;
+  vignetteState = triggerVignette(vignetteState, assetIndex, performance.now(), 2600);
+  if (vignetteEl) {
+    vignetteEl.innerHTML = `<div class="romance-vignette-card"><img src="${vignetteState.imageSrc}" alt="خاطره" /></div><div class="romance-vignette-caption">${vignetteState.caption}</div>`;
+    vignetteEl.classList.add('active');
+  }
+}
+
+function triggerEmbraceAction() {
+  cancelCompanionMoments();
+  closeDialog();
+  markPlayerActive();
+  const now = performance.now();
+
+  audioEngine.playEmbraceHarmony();
+  showRomanceVignette(Math.floor(Math.random() * 3));
+
+  activeEmbraceStart = now;
+  angel.userData.isEmbracing = true;
+  gor.userData.isEmbracing = true;
+
+  const dir = gor.position.clone().sub(angel.position).setY(0);
+  if (dir.lengthSq() > 0.001) {
+    faceDirection(angel, dir.clone().normalize());
+    faceDirection(gor, dir.clone().negate().normalize());
+  }
+
+  angel.userData.emoteUntil = now + EMBRACE_DURATION_MS;
+  gor.userData.emoteUntil = now + EMBRACE_DURATION_MS;
+  angel.userData.emoteKind = 'hug';
+  gor.userData.emoteKind = 'hug';
+
+  const midpoint = angel.position.clone().add(gor.position).multiplyScalar(0.5);
+  fx.spawnFootstepGlow(midpoint);
+  const hands = computeHandPositions(angel.position, gor.position);
+  angelHandPos.set(hands.angelHand.x, hands.angelHand.y, hands.angelHand.z);
+  gorHandPos.set(hands.gorHand.x, hands.gorHand.y, hands.gorHand.z);
+  fx.setHandHoldConnection(angelHandPos, gorHandPos, true);
+  setTimeout(() => {
+    angel.userData.isEmbracing = false;
+    gor.userData.isEmbracing = false;
+    if (!handHoldingActive) {
+      fx.setHandHoldConnection(angel.position, gor.position, false);
+    }
+  }, EMBRACE_DURATION_MS);
+
+  setStatus('یکدیگر را با گرمی در آغوش کشیدید؛ نوای آرامش در دشت طنین‌انداز شد.');
+}
+
 const socialLines: Record<'wave' | 'sit' | 'walk', string[]> = {
   wave: ['به گوراستاخ سلام کردی.', 'گوراستاخ جواب سلام داد.', 'با هم سلام کردید.'],
   sit: ['کنار هم نشستید.', 'کمی استراحت کردید.', 'با هم مکث کردید.'],
-  walk: ['با هم قدم زدید.', 'قدم‌زدن کوتاه.', 'مسیر تازه‌ای دیدید.'],
+  walk: ['دست در دست و شانه به شانه قدم می‌زنید.', 'گردش آرام و دل‌نشین در دشت.', 'کنار هم در سایه‌روشن دشت راه می‌روید.'],
 };
 function socialAction(kind: 'wave' | 'sit' | 'walk') {
   cancelCompanionMoments();
   closeDialog();
+  markPlayerActive();
   const line = socialLines[kind][socialBeat++ % socialLines[kind].length];
-  const until = performance.now() + (kind === 'walk' ? 2200 : 1250);
+  const until = performance.now() + (kind === 'walk' ? 9000 : 1600);
   angel.userData.emoteUntil = until;
   gor.userData.emoteUntil = until;
   angel.userData.emoteKind = kind;
@@ -471,9 +664,38 @@ function socialAction(kind: 'wave' | 'sit' | 'walk') {
 }
 function peopleDialog(returnFocus: HTMLElement = $('people-action')) {
   cancelCompanionMoments();
-  dialog('همراهان', '', `<div class="companion-actions"><button data-social="wave">سلام</button><button data-social="sit">کمی بنشینیم</button><button data-social="walk">با هم قدم بزنیم</button><button id="appearance-action">تغییر ظاهر</button></div>`, returnFocus);
+  markPlayerActive();
+  const handHoldLabel = handHoldingActive ? 'رها کردن دست' : 'دست هم را بگیریم';
+  const flightLabel = flightState !== 'grounded' ? 'فرود آمدن' : 'پرواز دونفره';
+  dialog(
+    'همراهان',
+    '',
+    `<div class="companion-actions">
+      <button data-social="wave">سلام</button>
+      <button data-social="handhold">${handHoldLabel}</button>
+      <button data-social="fly">${flightLabel}</button>
+      <button data-social="embrace">در آغوش کشیدن</button>
+      <button data-social="sit">کمی بنشینیم</button>
+      <button data-social="walk">با هم قدم بزنیم</button>
+      <button id="appearance-action">تغییر ظاهر</button>
+    </div>`,
+    returnFocus,
+  );
   for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-social]')) {
-    button.onclick = () => socialAction(button.dataset.social as 'wave' | 'sit' | 'walk');
+    button.onclick = () => {
+      const kind = button.dataset.social;
+      if (kind === 'wave' || kind === 'sit' || kind === 'walk') {
+        socialAction(kind);
+      } else if (kind === 'handhold') {
+        closeDialog();
+        toggleHandHolding();
+      } else if (kind === 'fly') {
+        closeDialog();
+        toggleFlight();
+      } else if (kind === 'embrace') {
+        triggerEmbraceAction();
+      }
+    };
   }
   $('appearance-action').onclick = appearanceDialog;
 }
@@ -507,8 +729,79 @@ function appearanceDialog() {
     };
   }
 }
+function openPlanetaryMap(returnFocus: HTMLElement = $('world-map-action')) {
+  cancelCompanionMoments();
+  markPlayerActive();
+  const districtList = (Object.entries(districts) as [District, typeof districts[District]][]).map(([id, d]) => {
+    return `<button class="district-btn" data-district="${id}" style="border-right: 4px solid ${d.color}; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; margin: 8px 0; width: 100%; border-radius: 8px; background: rgba(255,255,255,0.85); cursor: pointer; text-align: right; border: 1px solid rgba(0,0,0,0.08); font-family: inherit;">
+      <div>
+        <div style="font-weight: 700; font-size: 1.05rem; color: #1e3328;">${d.icon} ${d.name}</div>
+        <div style="font-size: 0.82rem; color: #4a6358;">${d.subtitle}</div>
+      </div>
+      <span style="font-size: 0.85rem; color: #2e6b52; font-weight: 600;">پرواز به اینجا ✦</span>
+    </button>`;
+  }).join('');
+
+  dialog(
+    'سفر در سیارهٔ دوشاخ‌ها',
+    `<p style="margin-bottom: 12px; font-size: 0.9rem; opacity: 0.9;">مکان مورد نظر برای پرواز و گردش دونفره را انتخاب کنید:</p><div class="districts-grid">${districtList}</div>`,
+    '',
+    returnFocus,
+  );
+
+  for (const btn of overlay.querySelectorAll<HTMLButtonElement>('[data-district]')) {
+    btn.onclick = () => {
+      const id = btn.dataset.district as District;
+      closeDialog();
+      fastTravelToDistrict(id);
+    };
+  }
+}
+
+function fastTravelToDistrict(id: District) {
+  const d = districts[id];
+  if (!d) return;
+  cancelCompanionMoments();
+  markPlayerActive();
+
+  audioEngine.playBloomChime();
+
+  const flash = document.createElement('div');
+  flash.style.position = 'fixed';
+  flash.style.inset = '0';
+  flash.style.background = 'radial-gradient(circle, rgba(255,255,255,0.88) 0%, rgba(200,240,230,0.65) 60%, transparent 100%)';
+  flash.style.opacity = '0';
+  flash.style.transition = 'opacity 0.35s ease';
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '999';
+  document.body.appendChild(flash);
+
+  requestAnimationFrame(() => {
+    flash.style.opacity = '1';
+    setTimeout(() => {
+      const elev = planetElevation(d.x, d.z);
+      angel.position.set(d.x, elev, d.z);
+      gor.position.set(d.x + 1.2, elev, d.z + 0.3);
+      target = null;
+      cameraFocus.set(d.x, elev, d.z);
+      districtWorld.activate(id);
+      setStatus(`دست در دست هم با نوری آرام به «${d.name}» رسیدید.`);
+
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 400);
+    }, 350);
+  });
+}
+
+$('world-map-action').onclick = () => openPlanetaryMap($('world-map-action'));
+renderer.domElement.addEventListener('contextmenu', event => {
+  event.preventDefault();
+  openPlanetaryMap();
+});
+
 $('people-action').onclick = () => peopleDialog($('people-action'));
-$('plant-action').onclick = () => { cancelCompanionMoments(); closeDialog(); ownGarden.open(); };
+$('flight-toggle-btn').onclick = () => toggleFlight();
+$('plant-action').onclick = () => { cancelCompanionMoments(); closeDialog(); if (flightState !== 'grounded') toggleFlight(false); ownGarden.open(); };
 $('interact').onclick = () => { if (nearestCompanion) peopleDialog($('interact')); };
 $('camera-view').onclick = () => {
   wideView = !wideView;
@@ -520,8 +813,12 @@ $('camera-view').onclick = () => {
 const raycaster = new T.Raycaster();
 const pointer = new T.Vector2();
 let pointerStart = { x: 0, y: 0 };
-renderer.domElement.addEventListener('pointerdown', event => { pointerStart = { x: event.clientX, y: event.clientY }; });
+renderer.domElement.addEventListener('pointerdown', event => {
+  markPlayerActive();
+  pointerStart = { x: event.clientX, y: event.clientY };
+});
 renderer.domElement.addEventListener('pointerup', event => {
+  markPlayerActive();
   if (!overlay.hidden || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 12) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
@@ -530,6 +827,7 @@ renderer.domElement.addEventListener('pointerup', event => {
   if (ownGarden.owns(raycaster)) { ownGarden.open(); ownGarden.hit(raycaster); return; }
   if (raycaster.intersectObject(gor, true).length) {
     cancelCompanionMoments();
+    markPlayerActive();
     if (nearestCompanion) peopleDialog($('interact'));
     else setStatus('گوراستاخ کمی دورتر است؛ با حرکت به او نزدیک شو.');
     return;
@@ -537,8 +835,9 @@ renderer.domElement.addEventListener('pointerup', event => {
   const hit = raycaster.intersectObject(districtWorld.ground)[0];
   if (!hit) return;
   cancelCompanionMoments();
+  markPlayerActive();
   target = hit.point.clone();
-  target.y = 0;
+  target.y = planetElevation(target.x, target.z);
   const bounds = worldBounds();
   const dx = target.x - bounds.x, dz = target.z - bounds.z, distance = Math.hypot(dx, dz);
   if (distance > bounds.r) { target.x = bounds.x + dx * bounds.r / distance; target.z = bounds.z + dz * bounds.r / distance; }
@@ -555,10 +854,25 @@ window.addEventListener('keydown', event => {
     }
     return;
   }
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
-    event.preventDefault(); cancelCompanionMoments(); keys.add(event.key); target = null;
+  const key = event.key.toLowerCase();
+  if (key === 'f') {
+    event.preventDefault();
+    toggleFlight();
+    return;
   }
-  if (event.key.toLowerCase() === 'e' && nearestCompanion) $('interact').click();
+  if (key === 'h' && nearestCompanion) {
+    event.preventDefault();
+    toggleHandHolding();
+    return;
+  }
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
+    event.preventDefault();
+    cancelCompanionMoments();
+    markPlayerActive();
+    keys.add(event.key);
+    target = null;
+  }
+  if (key === 'e' && nearestCompanion) $('interact').click();
   if (event.key === 'Escape' && ownGarden.editing) ownGarden.close();
 });
 window.addEventListener('keyup', event => keys.delete(event.key));
@@ -587,12 +901,16 @@ function animate() {
   const dt = T.MathUtils.clamp(clock.getDelta(), 0, .75);
   elapsed += dt;
   const atmosphere = sampleAmbience(elapsed);
+  fx.setNightIntensity(computeNightIntensity(atmosphere.phase, atmosphere.phaseProgress));
   if (gameRoot.dataset.phase !== atmosphere.phase) gameRoot.dataset.phase = atmosphere.phase;
   if (gameRoot.dataset.weather !== atmosphere.weather) gameRoot.dataset.weather = atmosphere.weather;
   const solarAngle = (elapsed / (18 * 60)) * Math.PI * 2;
   sun.position.set(Math.cos(solarAngle) * 16, 22 + Math.max(0, Math.sin(solarAngle)) * 4, Math.sin(solarAngle) * 10);
+  const isFlying = flightState !== 'grounded';
+  const moveSpeed = isFlying ? 5.4 : 4.2;
+  const movement = new T.Vector3();
+
   if (overlay.hidden && !ownGarden.editing) {
-    const movement = new T.Vector3();
     if (target) {
       movement.copy(target).sub(angel.position).setY(0);
       if (movement.length() < .2) { target = null; movement.set(0, 0, 0); }
@@ -603,35 +921,124 @@ function animate() {
       movement.set(x * .84 + z * .54, 0, z * .84 - x * .54).normalize();
     }
     if (movement.lengthSq()) {
-      angel.position.addScaledVector(movement, target ? Math.min(dt * 4.2, target.clone().setY(angel.position.y).distanceTo(angel.position)) : dt * 4.2);
+      markPlayerActive(now);
+      const stepDist = target
+        ? Math.min(dt * moveSpeed, target.clone().setY(angel.position.y).distanceTo(angel.position))
+        : dt * moveSpeed;
+      angel.position.addScaledVector(movement, stepDist);
+      walkDistance += stepDist;
+      footstepAccumulator += stepDist;
       const bounds = worldBounds();
       const dx = angel.position.x - bounds.x, dz = angel.position.z - bounds.z, distance = Math.hypot(dx, dz);
       if (distance > bounds.r) { angel.position.x = bounds.x + dx * bounds.r / distance; angel.position.z = bounds.z + dz * bounds.r / distance; }
       faceDirection(angel, movement);
+
+      // Banking physics computation
+      currentHeadingAngle = Math.atan2(movement.x, movement.z);
+      let dAngle = currentHeadingAngle - lastHeadingAngle;
+      while (dAngle > Math.PI) dAngle -= Math.PI * 2;
+      while (dAngle < -Math.PI) dAngle += Math.PI * 2;
+      const turnRate = dAngle / Math.max(0.001, dt);
+      lastHeadingAngle = currentHeadingAngle;
+      bankAngle = calculateBankingRoll(bankAngle, isFlying ? turnRate : 0, dt);
+    } else {
+      bankAngle = calculateBankingRoll(bankAngle, 0, dt);
     }
+
     const companionOnMoment = updateAutonomousCompanion(now, dt);
     const follow = angel.position.clone().sub(gor.position).setY(0);
     if (!companionOnMoment) {
-      if (now < (gor.userData.walkTogetherUntil ?? 0)) {
-        const side = new T.Vector3(-follow.z, 0, follow.x).normalize();
-        gor.position.addScaledVector(side, Math.sin(now * .004) * dt * 1.5);
-      } else if (follow.length() > 1.55) {
-        const step = Math.min(dt * 3.2, follow.length() - 1.45);
+      if (handHoldingActive) {
+        // Synchronized side-by-side positioning
+        const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
+        if (heading.lengthSq() < 1e-4) heading.set(0, 0, 1);
+        heading.normalize();
+        const lateral = calculateSideBySideOffset(heading, 0.82);
+        const desiredGorPos = angel.position.clone()
+          .add(new T.Vector3(lateral.x * handSideSign, 0, lateral.z * handSideSign));
+        desiredGorPos.y = planetElevation(desiredGorPos.x, desiredGorPos.z) + Math.max(0, isFlying ? baseAltitude : 0);
+
+        const blend = reducedMotion ? 1 : Math.min(1, dt * (isFlying ? 14 : 12));
+        gor.position.lerp(desiredGorPos, blend);
+        faceDirection(gor, heading);
+
+        // Break handholding if separated beyond 4.2m
+        if (isHandHoldDetached(angel.position.distanceTo(gor.position), 4.2)) {
+          toggleHandHolding(false);
+        }
+      } else if (now < (gor.userData.walkTogetherUntil ?? 0)) {
+        // Side-by-side stroll together (walk action)
+        const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
+        if (heading.lengthSq() < 1e-4) heading.set(0, 0, 1);
+        heading.normalize();
+        const isMoving = movement.lengthSq() > 0;
+        if (isMoving) {
+          const lateral = calculateSideBySideOffset(heading, 0.88);
+          const desiredPos = angel.position.clone()
+            .add(new T.Vector3(lateral.x * handSideSign, 0, lateral.z * handSideSign))
+            .addScaledVector(heading, -0.12);
+          desiredPos.y = planetElevation(desiredPos.x, desiredPos.z);
+          gor.position.lerp(desiredPos, Math.min(1, dt * 8.0));
+          faceDirection(gor, heading);
+        } else {
+          const toAngel = angel.position.clone().sub(gor.position).setY(0);
+          if (toAngel.length() > 1.15) {
+            gor.position.addScaledVector(toAngel.normalize(), Math.min(toAngel.length() - 1.0, dt * 2.5));
+          }
+          if (toAngel.lengthSq() > 0.01) {
+            faceDirection(gor, toAngel.normalize());
+          }
+        }
+      } else if (follow.length() > 1.45) {
+        const step = Math.min(dt * 3.4, follow.length() - 1.25);
         gor.position.addScaledVector(follow.normalize(), step);
+        if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
       }
-      if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
     }
   }
-  const focus = ownGarden.editing ? ownGarden.focus.clone() : angel.position.clone();
-  focus.y = 0;
-  cameraFocus.lerp(focus, reducedMotion ? 1 : 1 - Math.exp(-dt * 2));
+
+  // Idle awareness timer
+  updateCompanionIdleAwareness(now);
+
+  // Flight Altitude Dynamics
+  baseAltitude = calculateFlightAltitude(baseAltitude, targetAltitude, dt, 3.5, 3.5);
+  if (flightState === 'ascending' && Math.abs(baseAltitude - 4.0) < 0.05) {
+    flightState = 'cruising';
+  } else if (flightState === 'descending' && baseAltitude <= 0.04) {
+    flightState = 'grounded';
+    baseAltitude = 0;
+    audioEngine.playFlightLanding();
+    const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
+    flightBtn?.setAttribute('aria-pressed', 'false');
+    if (flightBtn) flightBtn.textContent = 'پرواز';
+    setStatus('به آرامی روی سبزه فرود آمدید.');
+  }
+
+  // Buoyant hovering oscillation
+  const hoverAmp = isFlying && !reducedMotion ? 0.12 * Math.min(1, baseAltitude / 2) : 0;
+  const angelY = baseAltitude + Math.sin(elapsed * 1.8) * hoverAmp;
+  const gorY = baseAltitude + Math.sin(elapsed * 1.8 + 0.45) * hoverAmp;
+  const angelGroundY = planetElevation(angel.position.x, angel.position.z);
+  const gorGroundY = planetElevation(gor.position.x, gor.position.z);
+  angel.position.y = angelGroundY + Math.max(0, angelY);
+  gor.position.y = gorGroundY + Math.max(0, gorY);
+
+  // Dynamic Camera Focus Y-Tracking & Horizon Expansion
+  characterMidpoint.copy(angel.position).add(gor.position).multiplyScalar(0.5);
+  const focus = ownGarden.editing
+    ? ownGarden.focus.clone().setY(0)
+    : new T.Vector3(characterMidpoint.x, calculateCameraFocusY(characterMidpoint.y, 0.82), characterMidpoint.z);
+
+  cameraFocus.lerp(focus, reducedMotion ? 1 : 1 - Math.exp(-dt * 2.5));
   if (ownGarden.editing && innerWidth < 700) camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * .18, innerWidth, innerHeight);
   else if (camera.view?.enabled) camera.clearViewOffset();
+
+  const horizonScale = 1.0 + 0.14 * (characterMidpoint.y / 4.0);
   const offset = ownGarden.editing
     ? new T.Vector3(11, 16, 15).multiplyScalar(Math.max(1, state.plotLevel / 2))
     : innerWidth < 700 ? new T.Vector3(14, 20, 23) : new T.Vector3(16, 21, 25);
   viewScale = T.MathUtils.lerp(viewScale, wideView && !ownGarden.editing ? 1.62 : 1, reducedMotion ? 1 : Math.min(1, dt * 4));
-  camera.position.copy(cameraFocus).add(offset.multiplyScalar(zoom * viewScale));
+  camera.position.copy(cameraFocus).add(offset.multiplyScalar(zoom * viewScale * horizonScale));
   camera.lookAt(cameraFocus);
   camera.updateMatrixWorld();
 
@@ -649,17 +1056,88 @@ function animate() {
     const pulse = emote && !reducedMotion ? Math.sin(now * .018) : 0;
     sprite.scale.y = sitting ? 2.48 : 2.8;
     ghost.scale.copy(sprite.scale);
-    sprite.position.y = (sitting ? 1.28 : 1.45) + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .025 : .2) : Math.sin(elapsed * 5 + index) * .025);
-    sprite.material.rotation = reducedMotion ? 0 : (kind === 'wave' && emote ? pulse * .08 : Math.sin(elapsed * 2 + index) * .018);
+
+    // Synchronized bobbing
+    const bob = isFlying
+      ? Math.sin(elapsed * 2.5 + index * 0.3) * 0.03
+      : handHoldingActive
+      ? Math.abs(Math.sin(walkDistance * 9.5)) * 0.035
+      : Math.sin(elapsed * 5 + index) * 0.025;
+
+    sprite.position.y = (sitting ? 1.28 : 1.45) + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .025 : .2) : bob);
+
+    const isEmbracing = now < activeEmbraceStart + EMBRACE_DURATION_MS;
+    if (reducedMotion) {
+      sprite.material.rotation = 0;
+    } else if (isEmbracing) {
+      const embraceProgress = (now - activeEmbraceStart) / EMBRACE_DURATION_MS;
+      const { approachFactor, tiltAngle } = calculateEmbraceTransform(embraceProgress);
+      // Smoothly guide characters into a tender cuddle without jarring jumps
+      const toGor = gor.position.clone().sub(angel.position).setY(0);
+      const dist = toGor.length();
+      if (dist > 0.54 && index === 1) {
+        gor.position.addScaledVector(toGor.normalize(), -Math.min(dist - 0.52, dt * 2.8 * approachFactor));
+      }
+      if (toGor.lengthSq() > 0.001) {
+        faceDirection(angel, toGor);
+        faceDirection(gor, toGor.clone().negate());
+      }
+      sprite.material.rotation = (index === 0 ? -1 : 1) * tiltAngle;
+    } else if (isFlying) {
+      sprite.material.rotation = bankAngle;
+    } else if (kind === 'wave' && emote) {
+      sprite.material.rotation = pulse * .08;
+    } else {
+      sprite.material.rotation = Math.sin(elapsed * 2 + index) * .018;
+    }
+
     const shadow = actor.children[1] as T.Mesh;
-    shadow.scale.setScalar(1 + Math.max(0, pulse) * .15);
+    const actorAltitude = actor.position.y - planetElevation(actor.position.x, actor.position.z);
+    const shadowParams = calculateShadowParams(actorAltitude);
+    shadow.position.y = -actor.position.y + planetElevation(actor.position.x, actor.position.z) + shadowParams.y;
+    shadow.scale.setScalar(shadowParams.scale * (1 + Math.max(0, pulse) * .15));
+    (shadow.material as T.MeshBasicMaterial).opacity = shadowParams.opacity;
   }
+
+  // Update adult romance vignette
+  if (vignetteState.active) {
+    vignetteState = updateVignetteState(vignetteState, now);
+    if (!vignetteState.active && vignetteEl) {
+      vignetteEl.classList.remove('active');
+    }
+  }
+
   nearestCompanion = angel.position.distanceTo(gor.position) < 2.35;
   const interaction = $<HTMLButtonElement>('interact');
   interaction.disabled = !nearestCompanion;
   interaction.textContent = nearestCompanion ? 'سلام' : 'نزدیک شو';
   interaction.setAttribute('aria-label', nearestCompanion ? 'صحبت با گوراستاخ' : 'برای صحبت، به گوراستاخ نزدیک شو');
   districtWorld.tick(elapsed, reducedMotion, atmosphere.windStrength);
+  fauna.update(elapsed, dt, reducedMotion);
+  fx.update(dt, now);
+  fx.updateRibbonTrails(angel.position, gor.position, isFlying);
+
+  // Compute hand anchors for luminous beam
+  const hands = computeHandPositions(angel.position, gor.position);
+  angelHandPos.set(hands.angelHand.x, hands.angelHand.y, hands.angelHand.z);
+  gorHandPos.set(hands.gorHand.x, hands.gorHand.y, hands.gorHand.z);
+  fx.setHandHoldConnection(angelHandPos, gorHandPos, handHoldingActive || (now < activeEmbraceStart + EMBRACE_DURATION_MS));
+
+  // Footstep decals
+  if (!isFlying && (movement.lengthSq() > 0 || now < (gor.userData.walkTogetherUntil ?? 0))) {
+    if (footstepAccumulator >= 0.65) {
+      footstepAccumulator -= 0.65;
+      leftFoot = !leftFoot;
+      const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
+      if (heading.lengthSq() < 1e-4) heading.set(0, 0, 1);
+      heading.normalize();
+      const footSide = new T.Vector3(heading.z, 0, -heading.x).multiplyScalar(leftFoot ? 0.12 : -0.12);
+      fx.spawnFootstepGlow(angel.position.clone().add(footSide));
+      if (handHoldingActive || now < (gor.userData.walkTogetherUntil ?? 0)) {
+        fx.spawnFootstepGlow(gor.position.clone().add(footSide));
+      }
+    }
+  }
   noticeFreshBlooms(Date.now());
   ownGarden.tick(Date.now());
   if (scene.background instanceof T.Color) {
@@ -697,7 +1175,8 @@ function animate() {
     rainStreaks.visible = false;
     rainMaterial.opacity = 0;
   }
-  updateAmbientAudio(atmosphere.windStrength, atmosphere.rainStrength, now);
+  const waterDistance = Math.hypot(angel.position.x, angel.position.z);
+  audioEngine.updateAmbience(atmosphere.windStrength, atmosphere.rainStrength, waterDistance);
   renderer.render(scene, camera);
 }
 
