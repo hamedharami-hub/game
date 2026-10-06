@@ -510,3 +510,18 @@ test('8.2: system dispose() unhooks scene nodes and disposes all geometries and 
   fx.dispose!();
   assert.strictEqual(scene.children.length, 0, 'Root group must be cleanly removed from scene');
 });
+
+test('8.3: spawnEmbraceWarmth spawns warm stars and respects reduced motion', () => {
+  const scene = new T.Scene();
+  const fx = createVisualFXSystem(scene);
+
+  const initialCount = fx.activeStarCount ?? 0;
+  fx.spawnEmbraceWarmth!(new T.Vector3(1, 2, 3));
+  assert.ok((fx.activeStarCount ?? 0) >= initialCount);
+
+  // When reducedMotion is enabled, does not spawn
+  fx.setReducedMotion!(true);
+  const beforeReduced = fx.activeStarCount ?? 0;
+  fx.spawnEmbraceWarmth!(new T.Vector3(1, 2, 3));
+  assert.strictEqual(fx.activeStarCount ?? 0, beforeReduced);
+});

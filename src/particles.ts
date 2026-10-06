@@ -20,6 +20,7 @@ export interface VisualFXSystem {
   update(dt: number, now: number): void;
   updateRibbonTrails(angelPos: T.Vector3, gorPos: T.Vector3, flying: boolean): void;
   spawnFootstepGlow(position: T.Vector3): void;
+  spawnEmbraceWarmth?(midpoint: T.Vector3): void;
   setHandHoldConnection(angelHand: T.Vector3, gorHand: T.Vector3, active: boolean): void;
   setNightIntensity(nightFactor: number): void;
   setReducedMotion?(reduced: boolean): void;
@@ -906,6 +907,22 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       mesh.visible = true;
       footstepBornAt[idx] = internalNow;
       footstepActive[idx] = 1;
+    },
+
+    spawnEmbraceWarmth(midpoint: T.Vector3): void {
+      if (reducedMotion) return;
+      for (let i = 0; i < 2; i++) {
+        spawnStar(
+          midpoint.x + (Math.random() - 0.5) * 0.45,
+          midpoint.y + 1.1 + (Math.random() - 0.5) * 0.35,
+          midpoint.z + (Math.random() - 0.5) * 0.45,
+          (Math.random() - 0.5) * 0.12,
+          0.16 + Math.random() * 0.22,
+          (Math.random() - 0.5) * 0.12,
+          1.0, 0.78, 0.88,
+          1.2 + Math.random() * 0.6,
+        );
+      }
     },
 
     setHandHoldConnection(angelHand: T.Vector3, gorHand: T.Vector3, active: boolean): void {

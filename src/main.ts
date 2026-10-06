@@ -17,7 +17,6 @@ import {
   isCompanionIdle,
   computeHandPositions,
   isHandHoldDetached,
-  calculateWingFlapAngle,
   calculateEmbraceTransform,
   planetElevation,
   type FlightState,
@@ -548,9 +547,6 @@ function toggleHandHolding(force?: boolean) {
     const rightNormal = new T.Vector3(heading.z, 0, -heading.x).normalize();
     const toGor = gor.position.clone().sub(angel.position).setY(0);
     handSideSign = toGor.dot(rightNormal) >= 0 ? 1 : -1;
-    const offset = calculateSideBySideOffset(heading, 0.90);
-    gor.position.x = angel.position.x + offset.x * handSideSign;
-    gor.position.z = angel.position.z + offset.z * handSideSign;
     faceDirection(gor, heading);
     const hands = computeHandPositions(angel.position, gor.position);
     angelHandPos.set(hands.angelHand.x, hands.angelHand.y, hands.angelHand.z);
@@ -590,6 +586,7 @@ function toggleFlight(force?: boolean) {
 }
 
 let activeEmbraceStart = 0;
+let lastEmbraceParticleTime = 0;
 const EMBRACE_DURATION_MS = 3200;
 let vignetteState: VignetteState = createVignetteState();
 const vignetteEl = $('romance-vignette');
@@ -613,6 +610,7 @@ function triggerEmbraceAction() {
   showRomanceVignette(Math.floor(Math.random() * 3));
 
   activeEmbraceStart = now;
+  lastEmbraceParticleTime = now;
   angel.userData.isEmbracing = true;
   gor.userData.isEmbracing = true;
 
@@ -628,7 +626,9 @@ function triggerEmbraceAction() {
   gor.userData.emoteKind = 'hug';
 
   const midpoint = angel.position.clone().add(gor.position).multiplyScalar(0.5);
+  midpoint.y = planetElevation(midpoint.x, midpoint.z);
   fx.spawnFootstepGlow(midpoint);
+  fx.spawnEmbraceWarmth?.(midpoint);
   const hands = computeHandPositions(angel.position, gor.position);
   angelHandPos.set(hands.angelHand.x, hands.angelHand.y, hands.angelHand.z);
   gorHandPos.set(hands.gorHand.x, hands.gorHand.y, hands.gorHand.z);
@@ -659,7 +659,15 @@ function socialAction(kind: 'wave' | 'sit' | 'walk') {
   gor.userData.emoteUntil = until;
   angel.userData.emoteKind = kind;
   gor.userData.emoteKind = kind;
-  if (kind === 'walk') gor.userData.walkTogetherUntil = until;
+  if (kind === 'walk') {
+    gor.userData.walkTogetherUntil = until;
+    const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
+    if (heading.lengthSq() < 1e-4) heading.set(0, 0, 1);
+    heading.normalize();
+    const rightNormal = new T.Vector3(heading.z, 0, -heading.x).normalize();
+    const toGor = gor.position.clone().sub(angel.position).setY(0);
+    handSideSign = toGor.dot(rightNormal) >= 0 ? 1 : -1;
+  }
   setStatus(line);
 }
 function peopleDialog(returnFocus: HTMLElement = $('people-action')) {
@@ -921,6 +929,17 @@ function animate() {
       movement.set(x * .84 + z * .54, 0, z * .84 - x * .54).normalize();
     }
     if (movement.lengthSq()) {
+      if (now < activeEmbraceStart + EMBRACE_DURATION_MS) {
+        // Player steps out of embrace smoothly
+        activeEmbraceStart = 0;
+        angel.userData.isEmbracing = false;
+        gor.userData.isEmbracing = false;
+        angel.userData.emoteUntil = 0;
+        gor.userData.emoteUntil = 0;
+        if (!handHoldingActive) {
+          fx.setHandHoldConnection(angel.position, gor.position, false);
+        }
+      }
       markPlayerActive(now);
       const stepDist = target
         ? Math.min(dt * moveSpeed, target.clone().setY(angel.position.y).distanceTo(angel.position))
@@ -960,7 +979,19 @@ function animate() {
 
         const blend = reducedMotion ? 1 : Math.min(1, dt * (isFlying ? 14 : 12));
         gor.position.lerp(desiredGorPos, blend);
-        faceDirection(gor, heading);
+
+        const isMoving = movement.lengthSq() > 0;
+        if (isMoving) {
+          faceDirection(gor, heading);
+        } else if (now - lastPlayerActiveTime > 1200) {
+          // Standing still hand-in-hand: Gorastakh turns to gaze affectionately at Angel
+          const toAngel = angel.position.clone().sub(gor.position).setY(0);
+          if (toAngel.lengthSq() > 0.01) {
+            faceDirection(gor, toAngel.normalize());
+          }
+        } else {
+          faceDirection(gor, heading);
+        }
 
         // Break handholding if separated beyond 4.2m
         if (isHandHoldDetached(angel.position.distanceTo(gor.position), 4.2)) {
@@ -973,17 +1004,17 @@ function animate() {
         heading.normalize();
         const isMoving = movement.lengthSq() > 0;
         if (isMoving) {
-          const lateral = calculateSideBySideOffset(heading, 0.88);
+          const lateral = calculateSideBySideOffset(heading, 0.86);
           const desiredPos = angel.position.clone()
             .add(new T.Vector3(lateral.x * handSideSign, 0, lateral.z * handSideSign))
-            .addScaledVector(heading, -0.12);
+            .addScaledVector(heading, -0.08);
           desiredPos.y = planetElevation(desiredPos.x, desiredPos.z);
-          gor.position.lerp(desiredPos, Math.min(1, dt * 8.0));
+          gor.position.lerp(desiredPos, Math.min(1, dt * 8.5));
           faceDirection(gor, heading);
         } else {
           const toAngel = angel.position.clone().sub(gor.position).setY(0);
-          if (toAngel.length() > 1.15) {
-            gor.position.addScaledVector(toAngel.normalize(), Math.min(toAngel.length() - 1.0, dt * 2.5));
+          if (toAngel.length() > 1.05) {
+            gor.position.addScaledVector(toAngel.normalize(), Math.min(toAngel.length() - 0.95, dt * 2.5));
           }
           if (toAngel.lengthSq() > 0.01) {
             faceDirection(gor, toAngel.normalize());
@@ -1042,6 +1073,33 @@ function animate() {
   camera.lookAt(cameraFocus);
   camera.updateMatrixWorld();
 
+  const isEmbracing = now < activeEmbraceStart + EMBRACE_DURATION_MS;
+  if (isEmbracing) {
+    const embraceProgress = (now - activeEmbraceStart) / EMBRACE_DURATION_MS;
+    const { approachFactor } = calculateEmbraceTransform(embraceProgress);
+    const toGor = gor.position.clone().sub(angel.position).setY(0);
+    const dist = toGor.length();
+    if (dist > 0.001) {
+      const dir = toGor.clone().normalize();
+      faceDirection(angel, dir);
+      faceDirection(gor, dir.clone().negate());
+
+      const targetDistance = 0.52;
+      if (dist > targetDistance) {
+        const step = Math.min(dist - targetDistance, dt * 3.2 * approachFactor);
+        angel.position.addScaledVector(dir, step * 0.45);
+        gor.position.addScaledVector(dir, -step * 0.55);
+      }
+    }
+
+    const embraceMidpoint = angel.position.clone().add(gor.position).multiplyScalar(0.5);
+    embraceMidpoint.y = planetElevation(embraceMidpoint.x, embraceMidpoint.z);
+    if (now - lastEmbraceParticleTime > 150) {
+      lastEmbraceParticleTime = now;
+      fx.spawnEmbraceWarmth?.(embraceMidpoint);
+    }
+  }
+
   for (const [actor, index] of [[angel, 0], [gor, 1]] as const) {
     const sprite = actor.userData.sprite as T.Sprite;
     const ghost = actor.userData.ghost as T.Sprite;
@@ -1058,31 +1116,25 @@ function animate() {
     ghost.scale.copy(sprite.scale);
 
     // Synchronized bobbing
+    const isWalkingTogether = handHoldingActive || (now < (gor.userData.walkTogetherUntil ?? 0));
     const bob = isFlying
       ? Math.sin(elapsed * 2.5 + index * 0.3) * 0.03
-      : handHoldingActive
+      : isWalkingTogether
       ? Math.abs(Math.sin(walkDistance * 9.5)) * 0.035
       : Math.sin(elapsed * 5 + index) * 0.025;
 
     sprite.position.y = (sitting ? 1.28 : 1.45) + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .025 : .2) : bob);
 
-    const isEmbracing = now < activeEmbraceStart + EMBRACE_DURATION_MS;
     if (reducedMotion) {
       sprite.material.rotation = 0;
     } else if (isEmbracing) {
       const embraceProgress = (now - activeEmbraceStart) / EMBRACE_DURATION_MS;
-      const { approachFactor, tiltAngle } = calculateEmbraceTransform(embraceProgress);
-      // Smoothly guide characters into a tender cuddle without jarring jumps
-      const toGor = gor.position.clone().sub(angel.position).setY(0);
-      const dist = toGor.length();
-      if (dist > 0.54 && index === 1) {
-        gor.position.addScaledVector(toGor.normalize(), -Math.min(dist - 0.52, dt * 2.8 * approachFactor));
-      }
-      if (toGor.lengthSq() > 0.001) {
-        faceDirection(angel, toGor);
-        faceDirection(gor, toGor.clone().negate());
-      }
-      sprite.material.rotation = (index === 0 ? -1 : 1) * tiltAngle;
+      const { tiltAngle } = calculateEmbraceTransform(embraceProgress);
+      const angelScreenX = angel.position.clone().project(camera).x;
+      const gorScreenX = gor.position.clone().project(camera).x;
+      const gorIsOnRight = gorScreenX >= angelScreenX;
+      const tiltDirection = (index === 0 ? (gorIsOnRight ? -1 : 1) : (gorIsOnRight ? 1 : -1));
+      sprite.material.rotation = tiltDirection * tiltAngle;
     } else if (isFlying) {
       sprite.material.rotation = bankAngle;
     } else if (kind === 'wave' && emote) {
