@@ -13,6 +13,7 @@ Use Node 24. `npm ci` installs dependencies. Run `npm run dev -- --port 4174` fo
 | `src/main.ts` | Single scene, actors, movement, compact HUD, companion interactions and saves |
 | `src/world.ts` | Continuous landscape, landmarks, residents, wind, water and saved decorations |
 | `src/garden.ts` | Planting, growth visuals, harvest, keyboard grid and small garden panel |
+| `src/ambience.ts` | Deterministic active-play light and weather sampling; no wall-clock or save dependency |
 | `src/state.ts` | Versioned local save, migration, flowers, layout and appearance |
 | `src/appearance.ts`, `src/directions.ts` | Appearance assets and eight-direction sprite mapping |
 | `src/style.css` | Responsive, accessible game interface |
@@ -23,7 +24,7 @@ Use Node 24. `npm ci` installs dependencies. Run `npm run dev -- --port 4174` fo
 
 ## Current play and saved data
 
-The game opens on one large connected Two-Horn landscape. The main actions are planting, arranging the garden, and visiting companions. All flowers and small garden builds are free. Flowers grow in about 1–2 minutes, keep growing while closed, and start another cycle when picked. The world animates gently and honors reduced-motion settings.
+The game opens on one large connected Two-Horn landscape. The main actions are planting, arranging the garden, and visiting companions. All flowers and small garden builds are free. Flowers grow in about 1–2 minutes, keep growing while closed, and start another cycle when picked. Nearby flower diversity produces predictable visual reactions; companion moments are short and can be interrupted by player input. Light and occasional weather follow active session time, so nothing expires while the game is closed. Quiet generated wind/rain audio starts after a user gesture and pauses when the tab is hidden. The world animates gently and honors reduced-motion settings.
 
 Keep save schema version 1, `dream-caravan:garden:v1`, profile-specific keys and migration behavior. Existing plants, placed objects, and hair/outfit choices must survive changes. The whole 12×12 plot is open in new and migrated saves. Local storage is per browser/profile; `?profile=<encoded ID>` is not authentication or cloud sync.
 

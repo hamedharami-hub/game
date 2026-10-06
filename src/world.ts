@@ -438,6 +438,106 @@ export function createWorld(scene: T.Scene) {
     stone.castShadow = false;
   }
 
+  // Two quiet discoveries sit just beyond the usual grove walk: an elder-tree
+  // seat and a small stream-fed viewpoint. They are scenery only, with no map
+  // pins, gates, rewards, or interaction prompt; the ground stays continuous.
+  const discoveryMotes: { mesh: T.Mesh; center: T.Vector3; phase: number; radius: number }[] = [];
+  const addDiscoveryMote = (
+    parent: T.Object3D,
+    color: string,
+    x: number,
+    y: number,
+    z: number,
+    phase: number,
+    radius: number,
+  ) => {
+    const mesh = orb(color, x, y, z, 0.075, parent, true);
+    mesh.material = (mesh.material as T.MeshStandardMaterial).clone();
+    mesh.castShadow = false;
+    discoveryMotes.push({ mesh, center: new T.Vector3(x, y, z), phase, radius });
+  };
+
+  const elderNook = new T.Group();
+  elderNook.name = 'elder-tree-resting-nook';
+  elderNook.position.set(-10.8, 0, -9.8);
+  grove.add(elderNook);
+  const elderTrunk = pillar('#796047', 0, 3.6, 0, 0.94, 7.2, elderNook);
+  elderTrunk.rotation.z = -0.08;
+  for (const [x, z, leanX, leanZ] of [
+    [-1.2, 0.1, -0.32, -0.12], [1.15, 0.2, 0.34, 0.12],
+    [-0.2, -1.25, -0.08, -0.3], [0.15, 1.2, 0.08, 0.32],
+  ]) {
+    const branch = pillar('#80684e', x, 5.55, z, 0.24, 3.6, elderNook);
+    branch.rotation.z = leanX;
+    branch.rotation.x = leanZ;
+  }
+  for (const [x, y, z, r, color] of [
+    [-1.9, 7.5, 0, 2.5, '#688f62'], [0, 8.1, 0.4, 3.1, '#789c68'],
+    [1.9, 7.45, -0.15, 2.45, '#6d9667'], [-0.15, 7.3, -1.8, 2.3, '#82a673'],
+  ] as [number, number, number, number, string][]) {
+    const crown = orb(color, x, y, z, r, elderNook);
+    crown.scale.set(1.12, 0.74, 1);
+  }
+  // Exposed roots and a low, weathered seat make the spot feel restful.
+  for (const angle of [-1.3, -0.55, 0.3, 1.05, 2.35]) {
+    const root = pillar('#80684e', Math.cos(angle) * 1.55, 0.22, Math.sin(angle) * 1.25, 0.18, 0.44, elderNook);
+    root.rotation.z = Math.cos(angle) * 0.22;
+    root.rotation.x = Math.sin(angle) * 0.22;
+  }
+  box('#ae8968', 0, 0.52, 3.15, 2.8, 0.2, 0.72, elderNook);
+  box('#ae8968', 0, 0.92, 3.47, 2.8, 0.62, 0.16, elderNook);
+  for (const x of [-1, 1]) pillar('#8d7157', x, 0.28, 3.15, 0.075, 0.52, elderNook);
+  for (let i = 0; i < 5; i++) {
+    const angle = i * Math.PI * 0.4;
+    addDiscoveryMote(elderNook, '#ffe4a2', Math.cos(angle) * 2.25, 1.5 + (i % 2) * 0.36, Math.sin(angle) * 1.75, i * 1.27, 0.45);
+  }
+
+  const inletCurve = new T.CatmullRomCurve3([
+    new T.Vector3(2.8, 0.035, -1.4), new T.Vector3(4.6, 0.035, -2.7),
+    new T.Vector3(5.8, 0.035, -4.5), new T.Vector3(7.15, 0.035, -6.15),
+  ]);
+  grove.add(
+    new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.72, 8, false), material('#bdb18e')),
+    new T.Mesh(new T.TubeGeometry(inletCurve, 24, 0.48, 8, false), material('#8bd5cd')),
+  );
+  const poolView = new T.Group();
+  poolView.name = 'hidden-stream-viewpoint';
+  poolView.position.set(7.55, 0, -6.55);
+  grove.add(poolView);
+  const poolBank = new T.Mesh(new T.CylinderGeometry(2.35, 2.75, 0.28, 36), material('#c8ba99'));
+  poolBank.position.y = 0.08;
+  poolView.add(poolBank);
+  const stillWater = new T.Mesh(new T.CircleGeometry(2.2, 36), material('#83d0c8'));
+  stillWater.rotation.x = -Math.PI / 2;
+  stillWater.position.y = 0.23;
+  poolView.add(stillWater);
+  const poolShimmer = shape(geometries.torus, '#d9f5dd', 0, 0.28, 0, 1, 1, 1, poolView, true);
+  poolShimmer.rotation.x = Math.PI / 2;
+  poolShimmer.scale.set(1.85, 1.85, 1.85);
+  for (let i = 0; i < 4; i++) {
+    const angle = i * Math.PI / 2 + 0.35;
+    const lily = orb(i % 2 ? '#8cbb91' : '#aacb91', Math.cos(angle) * 1.22, 0.29, Math.sin(angle) * 1.22, 0.34, poolView);
+    lily.scale.set(1.15, 0.16, 0.88);
+    const flower = orb(i % 2 ? '#f0c8d2' : '#f3dfa0', Math.cos(angle) * 1.22, 0.39, Math.sin(angle) * 1.22, 0.11, poolView, true);
+    flower.scale.y = 0.58;
+  }
+  // A short scatter of flat stones gives a natural approach from the stream.
+  for (let i = 0; i < 5; i++) {
+    const t = (i + 1) / 6;
+    const point = inletCurve.getPoint(t);
+    const stone = orb('#d6c8a8', point.x - 0.68, 0.15, point.z + 0.68, 0.38, grove);
+    stone.scale.set(1.45, 0.34, 1);
+    stone.castShadow = false;
+  }
+  const viewpointSeat = box('#ad8968', 10.55, 0.47, -6.45, 2.45, 0.18, 0.72, grove);
+  viewpointSeat.rotation.y = Math.PI / 2;
+  const viewpointBack = box('#ad8968', 10.55, 0.85, -6.45, 2.45, 0.6, 0.16, grove);
+  viewpointBack.rotation.y = Math.PI / 2;
+  for (const z of [-7.35, -5.55]) pillar('#8d7157', 10.55, 0.24, z, 0.07, 0.46, grove);
+  for (let i = 0; i < 4; i++) {
+    addDiscoveryMote(poolView, '#e5f4c4', Math.cos(i * Math.PI / 2) * 1.55, 0.58, Math.sin(i * Math.PI / 2) * 1.55, 1.4 + i * 1.4, 0.25);
+  }
+
   // The open meadow has a ring of soft seats and a low shared fire bowl.
   const sanctuary = roots.sanctuary;
   const circle = new T.Mesh(new T.CircleGeometry(5.6, 48), material('#a9b493'));
@@ -540,8 +640,10 @@ export function createWorld(scene: T.Scene) {
     rebuild(state);
   }
 
-  function tick(time: number, reduced: boolean) {
+  function tick(time: number, reduced: boolean, windStrength = 1) {
     if (reduced) return;
+    const normalizedWind = Number.isFinite(windStrength) ? Math.max(0, Math.min(1, windStrength)) : 1;
+    const wind = 0.4 + normalizedWind * 0.65;
     residentRoots.forEach((person, i) => {
       const origin = person.userData.origin as T.Vector3;
       const phase = person.userData.phase as number;
@@ -554,13 +656,13 @@ export function createWorld(scene: T.Scene) {
     treePositions.forEach((tree, i) => {
       dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
       dummy.scale.set(1.9 * tree.size, 1.75 * tree.size, 1.8 * tree.size);
-      dummy.rotation.set(0, tree.lean, Math.sin(time * 0.55 + i * 0.41) * 0.018);
+      dummy.rotation.set(0, tree.lean, Math.sin(time * 0.55 + i * 0.41) * 0.018 * wind);
       dummy.updateMatrix();
       crowns.setMatrixAt(i, dummy.matrix);
     });
     crowns.instanceMatrix.needsUpdate = true;
     flowerLocations.forEach((flower, i) => {
-      const breeze = Math.sin(time * 1.2 + i * 0.29) * 0.08;
+      const breeze = Math.sin(time * 1.2 + i * 0.29) * 0.08 * wind;
       dummy.position.set(flower.x, 0.29 * flower.size, flower.z);
       dummy.scale.set(flower.size, flower.size, flower.size);
       dummy.rotation.set(0, 0, breeze);
@@ -578,6 +680,20 @@ export function createWorld(scene: T.Scene) {
       const pulse = (Math.sin(time * 1.3 + i * 1.8) + 1) / 2;
       ripple.scale.setScalar(0.8 + pulse * 0.65);
       (ripple.material as T.MeshBasicMaterial).opacity = 0.18 + pulse * 0.25;
+    });
+    poolShimmer.scale.setScalar(1.82 + Math.sin(time * 0.62) * 0.035);
+    poolShimmer.rotation.z = time * 0.08;
+    stillWater.scale.set(1 + Math.sin(time * 0.74) * 0.008, 1, 1 + Math.cos(time * 0.59) * 0.008);
+    discoveryMotes.forEach(({ mesh, center, phase, radius }) => {
+      const drift = time * 0.19 + phase;
+      const glint = Math.pow(Math.max(0, Math.sin(time * 0.62 + phase)), 12);
+      mesh.position.set(
+        center.x + Math.cos(drift) * radius,
+        center.y + 0.18 + (Math.sin(drift * 1.35) + 1) * 0.16,
+        center.z + Math.sin(drift) * radius,
+      );
+      mesh.scale.setScalar(0.045 + glint * 0.075);
+      (mesh.material as T.MeshStandardMaterial).emissiveIntensity = 0.18 + glint * 0.7;
     });
     windowGlowMaterial.emissiveIntensity = 0.15 + Math.sin(time * 0.7) * 0.025;
     fireflies.rotation.y = time * 0.008;

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 — One world, fresh moments
+- Made garden layout produce clear, deterministic visual reactions: moonflower and starlily halos, butterflies near mixed blooms, and a warmer bed with greater flowering diversity.
+- Added short companion moments around fresh blooms and new garden builds; manual movement and visits remain in control.
+- Added an 18-minute active-play light cycle with distinct morning, day, evening and night palettes, plus occasional breezes, light rain and a quiet generated ambient sound bed.
+- Added two walkable grove discoveries: an elder-tree resting nook and a small stream-fed pond lookout.
+- Improved mobile planting targets and garden-panel scrolling while preserving reduced-motion and keyboard support.
+- Kept version-1 saves, flowers, layouts, appearance choices and offline growth; no new currency, daily reward or expiry was added.
+
 ## v0.3.0 — One living world
 - Replaced the planet-hopping quest flow with direct entry to one broad, connected Two-Horn landscape.
 - Simplified the main actions to planting, arranging the garden, and spending time with local companions.

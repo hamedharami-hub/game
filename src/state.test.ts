@@ -144,6 +144,36 @@ test('older saves retain plants, progress, personal style, and account isolation
   assert.equal(storageKey(null), SAVE_KEY);
 });
 
+test('a legacy v1 garden keeps offline growth and never loses saved belongings', () => {
+  const beforeBreak = decodeSave(JSON.stringify({
+    version: 1,
+    collected: ['seed'],
+    plotLevel: 1,
+    plants: [{ id: 'offline-bloom', species: 'moonflower', col: 2, row: 2, plantedAt: 1_000, boostMs: 0, lastWaterAt: 0 }],
+    essence: 23,
+    projects: ['lamps'],
+    decorations: [{ district: 'garden', slot: 0, kind: 'pool' }],
+    gorHair: 'brown',
+    visited: ['grove'],
+  }));
+
+  const returnedAt = 24 * 60 * 60 * 1_000;
+  assert.equal(beforeBreak.plants.length, 1);
+  assert.equal(growthStage(beforeBreak.plants[0], returnedAt), 3);
+  assert.equal(growRemaining(beforeBreak.plants[0], returnedAt), 0);
+  assert.equal(beforeBreak.essence, 23);
+  assert.deepEqual(beforeBreak.projects, ['lamps']);
+  assert.deepEqual(beforeBreak.decorations, [{ district: 'garden', slot: 0, kind: 'pool' }]);
+
+  const tended = harvest(beforeBreak, 'offline-bloom', returnedAt);
+  assert.equal(tended.plants.length, 1);
+  assert.equal(growthStage(tended.plants[0], returnedAt), 0);
+  assert.ok(tended.essence >= beforeBreak.essence);
+  assert.deepEqual(tended.projects, beforeBreak.projects);
+  assert.deepEqual(tended.decorations, beforeBreak.decorations);
+  assert.deepEqual(decodeSave(JSON.stringify(tended)), tended);
+});
+
 test('corrupt saves stay safe and appearance choices persist per character', () => {
   for (const raw of ['bad', '{"version":9}', '{"version":1,"collected":["unknown"]}']) {
     assert.deepEqual(decodeSave(raw), initialState());

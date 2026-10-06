@@ -2,14 +2,15 @@ import * as T from 'three';
 import './style.css';
 import { directionFrame } from './directions';
 import { createGarden } from './garden';
-import { initialState, decodeSave, storageKey, placeDecoration, regionSlots, furnishings, species, setAppearance, hairColors, outfits, type Furnishing, type HairColor, type Outfit } from './state';
+import { sampleAmbience } from './ambience';
+import { initialState, decodeSave, storageKey, placeDecoration, decorationPosition, growthStage, regionSlots, furnishings, species, setAppearance, hairColors, outfits, type Furnishing, type HairColor, type Outfit } from './state';
 import type { State } from './state';
 import { lookAssets, diagonalAssets } from './appearance';
 import { createWorld } from './world';
 
 const gameSaveKey = storageKey(new URLSearchParams(location.search).get('profile'));
 const app = document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML = `<main>
+app.innerHTML = `<main data-phase="morning" data-weather="clear">
   <div id="world" aria-label="سرزمین زندهٔ دوشاخ‌ها"></div>
   <header class="hud">
     <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>سرزمین دوشاخ‌ها<small>خانهٔ زندهٔ ما</small></span></div>
@@ -27,6 +28,7 @@ app.innerHTML = `<main>
   <div id="overlay" hidden></div>
 </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
+const gameRoot = document.querySelector<HTMLElement>('main')!;
 
 let state: State = initialState();
 try {
@@ -51,6 +53,97 @@ let wideView = false;
 let zoom = 1;
 let elapsed = 0;
 let socialBeat = 0;
+type CompanionMoment = {
+  kind: 'flower' | 'decoration';
+  target: T.Vector3;
+  emote: 'wave' | 'sit';
+  status: string;
+  expiresAt: number;
+  startedAt?: number;
+  arrivedAt?: number;
+};
+let queuedCompanionMoment: CompanionMoment | null = null;
+let activeCompanionMoment: CompanionMoment | null = null;
+const observedPlantStages = new Map(state.plants.map(plant => [plant.id, growthStage(plant)]));
+let lastBloomCheck = 0;
+
+function cancelCompanionMoments() {
+  queuedCompanionMoment = null;
+  activeCompanionMoment = null;
+}
+
+function queueCompanionMoment(kind: CompanionMoment['kind'], focus: T.Vector3, emote: CompanionMoment['emote'], message: string, standOff: number) {
+  if (reducedMotion || queuedCompanionMoment || activeCompanionMoment) return;
+  // Keep these small reactions local to the player; distant gardens do not run behavior off-screen.
+  if (angel.position.distanceTo(focus) > 18) return;
+  const approach = gor.position.clone().sub(focus).setY(0);
+  if (approach.lengthSq() < .01) approach.set(1, 0, 0);
+  approach.normalize().multiplyScalar(standOff);
+  queuedCompanionMoment = {
+    kind,
+    target: focus.clone().add(approach),
+    emote,
+    status: message,
+    expiresAt: performance.now() + 20000,
+  };
+}
+
+function updateAutonomousCompanion(now: number, dt: number) {
+  if (reducedMotion || !overlay.hidden || ownGarden.editing) return false;
+  if (target || keys.size) {
+    cancelCompanionMoments();
+    return false;
+  }
+  if (queuedCompanionMoment) {
+    if (now > queuedCompanionMoment.expiresAt) queuedCompanionMoment = null;
+    else {
+      queuedCompanionMoment.startedAt = now;
+      activeCompanionMoment = queuedCompanionMoment;
+      queuedCompanionMoment = null;
+    }
+  }
+  const moment = activeCompanionMoment;
+  if (!moment) return false;
+  if (moment.arrivedAt !== undefined) {
+    if (now - moment.arrivedAt > 2600) activeCompanionMoment = null;
+    return true;
+  }
+  if (now - (moment.startedAt ?? now) > 9000) {
+    activeCompanionMoment = null;
+    return false;
+  }
+  const step = moment.target.clone().sub(gor.position).setY(0);
+  const distance = step.length();
+  if (distance < .24) {
+    gor.position.copy(moment.target);
+    moment.arrivedAt = now;
+    gor.userData.emoteKind = moment.emote;
+    gor.userData.emoteUntil = now + 2600;
+    setStatus(moment.status);
+    return true;
+  }
+  step.normalize();
+  gor.position.addScaledVector(step, Math.min(distance, dt * 2.1));
+  faceDirection(gor, step);
+  return true;
+}
+
+function noticeFreshBlooms(now: number) {
+  if (now - lastBloomCheck < 1000) return;
+  lastBloomCheck = now;
+  const present = new Set<string>();
+  for (const plant of state.plants) {
+    present.add(plant.id);
+    const stage = growthStage(plant, now);
+    const previous = observedPlantStages.get(plant.id);
+    observedPlantStages.set(plant.id, stage);
+    if (previous !== undefined && previous < 3 && stage === 3) {
+      const flower = new T.Vector3(-2 + plant.col - 3.5, 0, 14 + plant.row - 3.5);
+      queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار شکوفهٔ تازه مکث کرد.', 1.2);
+    }
+  }
+  for (const id of observedPlantStages.keys()) if (!present.has(id)) observedPlantStages.delete(id);
+}
 
 function refreshAmbience() {
   const base = new T.Color('#a4cfb6');
@@ -115,7 +208,8 @@ renderer.toneMapping = T.ACESFilmicToneMapping;
 renderer.toneMappingExposure = .96;
 $('world').append(renderer.domElement);
 renderer.domElement.setAttribute('aria-label', 'برای قدم‌زدن روی زمین کلیک کن؛ حرکت با کلیدهای جهت‌دار هم کار می‌کند.');
-scene.add(new T.HemisphereLight(0xfff3d7, 0x52785d, 1.65));
+const skyLight = new T.HemisphereLight(0xfff3d7, 0x52785d, 1.65);
+scene.add(skyLight);
 const sun = new T.DirectionalLight(0xffe1a8, 2.35);
 sun.position.set(-14, 24, 8);
 sun.castShadow = true;
@@ -130,6 +224,99 @@ const districtWorld = createWorld(scene);
 const cameraFocus = new T.Vector3(-2, 0, 14);
 const worldBounds = () => districtWorld.bounds();
 const ambienceTarget = new T.Color('#a4cfb6');
+const skyColorTarget = new T.Color();
+const fogColorTarget = new T.Color();
+const hemisphereColorTarget = new T.Color();
+const groundHemisphereColorTarget = new T.Color();
+const groundHemisphereBase = new T.Color('#3f594f');
+const sunColorTarget = new T.Color();
+
+// A small local drizzle follows the player while rain is active. The geometry
+// is reused each frame and hidden completely in reduced-motion mode.
+const rainDropCount = 88;
+const rainPositions = new Float32Array(rainDropCount * 6);
+const rainSpeeds = new Float32Array(rainDropCount);
+let rainSeed = 0x51f15e;
+const rainRandom = () => {
+  rainSeed = (Math.imul(rainSeed, 1664525) + 1013904223) >>> 0;
+  return rainSeed / 4294967296;
+};
+for (let i = 0; i < rainDropCount; i++) {
+  const x = (rainRandom() - 0.5) * 28;
+  const y = 2 + rainRandom() * 15;
+  const z = (rainRandom() - 0.5) * 26;
+  const length = 0.18 + rainRandom() * 0.2;
+  const at = i * 6;
+  rainPositions.set([x, y, z, x + 0.035, y - length, z], at);
+  rainSpeeds[i] = 6 + rainRandom() * 3.5;
+}
+const rainGeometry = new T.BufferGeometry();
+const rainPositionAttribute = new T.BufferAttribute(rainPositions, 3).setUsage(T.DynamicDrawUsage);
+rainGeometry.setAttribute('position', rainPositionAttribute);
+const rainMaterial = new T.LineBasicMaterial({
+  color: '#e1f2ee', transparent: true, opacity: 0, depthWrite: false,
+});
+const rainStreaks = new T.LineSegments(rainGeometry, rainMaterial);
+rainStreaks.visible = false;
+scene.add(rainStreaks);
+
+type AmbientAudio = { context: AudioContext; wind: GainNode; rain: GainNode };
+let ambientAudio: AmbientAudio | null = null;
+let lastAudioUpdate = 0;
+function enableAmbientAudio() {
+  if (ambientAudio || !window.AudioContext) return;
+  try {
+    const context = new AudioContext();
+    const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
+    const noise = buffer.getChannelData(0);
+    let seed = 0x731a4d;
+    for (let i = 0; i < noise.length; i++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      noise[i] = (seed / 4294967296 - 0.5) * 0.48;
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+
+    const master = context.createGain();
+    master.gain.value = 0.55;
+    master.connect(context.destination);
+
+    const windFilter = context.createBiquadFilter();
+    windFilter.type = 'lowpass';
+    windFilter.frequency.value = 520;
+    const wind = context.createGain();
+    wind.gain.value = 0;
+    source.connect(windFilter).connect(wind).connect(master);
+
+    const rainFilter = context.createBiquadFilter();
+    rainFilter.type = 'highpass';
+    rainFilter.frequency.value = 1350;
+    const rain = context.createGain();
+    rain.gain.value = 0;
+    source.connect(rainFilter).connect(rain).connect(master);
+
+    source.start();
+    ambientAudio = { context, wind, rain };
+    void context.resume().catch(() => {});
+  } catch { /* Audio is optional; the visual atmosphere remains complete. */ }
+}
+
+function updateAmbientAudio(windStrength: number, rainStrength: number, now: number) {
+  if (!ambientAudio || now - lastAudioUpdate < 450) return;
+  lastAudioUpdate = now;
+  const at = ambientAudio.context.currentTime;
+  ambientAudio.wind.gain.setTargetAtTime(.0035 + windStrength * .0045, at, .7);
+  ambientAudio.rain.gain.setTargetAtTime(rainStrength * .008, at, .9);
+}
+
+document.addEventListener('pointerdown', enableAmbientAudio, { once: true, passive: true });
+window.addEventListener('keydown', enableAmbientAudio, { once: true });
+document.addEventListener('visibilitychange', () => {
+  if (!ambientAudio) return;
+  if (document.hidden) void ambientAudio.context.suspend().catch(() => {});
+  else void ambientAudio.context.resume().catch(() => {});
+});
 
 const atlasCache = new Map<string, T.Texture>();
 const visualActors: T.Group[] = [];
@@ -221,9 +408,11 @@ const ownGarden = createGarden(
       gor.userData.emoteUntil = performance.now() + 1000;
       gor.userData.emoteKind = 'wave';
       setStatus(`${species[newPlant.species].name} کاشته شد.`);
+      const flower = new T.Vector3(-2 + newPlant.col - 3.5, 0, 14 + newPlant.row - 3.5);
+      queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار گل تازه مکث کرد.', 1.2);
     } else if (next.essence > previous.essence) setStatus('گل برداشت شد.');
   },
-  () => { target = null; keys.clear(); },
+  () => { target = null; keys.clear(); cancelCompanionMoments(); },
   () => { keys.clear(); },
   () => { ownGarden.close(); openBuild(); },
 );
@@ -242,11 +431,22 @@ function buildDialog() {
       state = next;
       save();
       setStatus(`${furnishings[kind].name} به باغ اضافه شد.`);
+      const local = decorationPosition('garden', slot, state.worldSeed);
+      const focus = new T.Vector3(-2 + local.x * .43, 0, 14 + local.z * .43);
+      const standOff = kind === 'pavilion' ? 3 : kind === 'arbor' ? 2 : 1.7;
+      queueCompanionMoment(
+        'decoration',
+        focus,
+        kind === 'pavilion' || kind === 'arbor' ? 'sit' : 'wave',
+        kind === 'pavilion' || kind === 'arbor' ? 'گوراستاخ کنار سازه کمی استراحت کرد.' : 'گوراستاخ برای دیدن سازه نزدیک شد.',
+        standOff,
+      );
       buildDialog();
     };
   }
 }
 function openBuild() {
+  cancelCompanionMoments();
   activeDialogReturn = $('build-action');
   buildDialog();
 }
@@ -258,6 +458,7 @@ const socialLines: Record<'wave' | 'sit' | 'walk', string[]> = {
   walk: ['با هم قدم زدید.', 'قدم‌زدن کوتاه.', 'مسیر تازه‌ای دیدید.'],
 };
 function socialAction(kind: 'wave' | 'sit' | 'walk') {
+  cancelCompanionMoments();
   closeDialog();
   const line = socialLines[kind][socialBeat++ % socialLines[kind].length];
   const until = performance.now() + (kind === 'walk' ? 2200 : 1250);
@@ -269,6 +470,7 @@ function socialAction(kind: 'wave' | 'sit' | 'walk') {
   setStatus(line);
 }
 function peopleDialog(returnFocus: HTMLElement = $('people-action')) {
+  cancelCompanionMoments();
   dialog('همراهان', '', `<div class="companion-actions"><button data-social="wave">سلام</button><button data-social="sit">کمی بنشینیم</button><button data-social="walk">با هم قدم بزنیم</button><button id="appearance-action">تغییر ظاهر</button></div>`, returnFocus);
   for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-social]')) {
     button.onclick = () => socialAction(button.dataset.social as 'wave' | 'sit' | 'walk');
@@ -306,7 +508,7 @@ function appearanceDialog() {
   }
 }
 $('people-action').onclick = () => peopleDialog($('people-action'));
-$('plant-action').onclick = () => { closeDialog(); ownGarden.open(); };
+$('plant-action').onclick = () => { cancelCompanionMoments(); closeDialog(); ownGarden.open(); };
 $('interact').onclick = () => { if (nearestCompanion) peopleDialog($('interact')); };
 $('camera-view').onclick = () => {
   wideView = !wideView;
@@ -327,12 +529,14 @@ renderer.domElement.addEventListener('pointerup', event => {
   if (ownGarden.editing) { ownGarden.hit(raycaster); return; }
   if (ownGarden.owns(raycaster)) { ownGarden.open(); ownGarden.hit(raycaster); return; }
   if (raycaster.intersectObject(gor, true).length) {
+    cancelCompanionMoments();
     if (nearestCompanion) peopleDialog($('interact'));
     else setStatus('گوراستاخ کمی دورتر است؛ با حرکت به او نزدیک شو.');
     return;
   }
   const hit = raycaster.intersectObject(districtWorld.ground)[0];
   if (!hit) return;
+  cancelCompanionMoments();
   target = hit.point.clone();
   target.y = 0;
   const bounds = worldBounds();
@@ -352,7 +556,7 @@ window.addEventListener('keydown', event => {
     return;
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
-    event.preventDefault(); keys.add(event.key); target = null;
+    event.preventDefault(); cancelCompanionMoments(); keys.add(event.key); target = null;
   }
   if (event.key.toLowerCase() === 'e' && nearestCompanion) $('interact').click();
   if (event.key === 'Escape' && ownGarden.editing) ownGarden.close();
@@ -382,6 +586,11 @@ function animate() {
   lastFrame = now;
   const dt = T.MathUtils.clamp(clock.getDelta(), 0, .75);
   elapsed += dt;
+  const atmosphere = sampleAmbience(elapsed);
+  if (gameRoot.dataset.phase !== atmosphere.phase) gameRoot.dataset.phase = atmosphere.phase;
+  if (gameRoot.dataset.weather !== atmosphere.weather) gameRoot.dataset.weather = atmosphere.weather;
+  const solarAngle = (elapsed / (18 * 60)) * Math.PI * 2;
+  sun.position.set(Math.cos(solarAngle) * 16, 22 + Math.max(0, Math.sin(solarAngle)) * 4, Math.sin(solarAngle) * 10);
   if (overlay.hidden && !ownGarden.editing) {
     const movement = new T.Vector3();
     if (target) {
@@ -400,15 +609,18 @@ function animate() {
       if (distance > bounds.r) { angel.position.x = bounds.x + dx * bounds.r / distance; angel.position.z = bounds.z + dz * bounds.r / distance; }
       faceDirection(angel, movement);
     }
+    const companionOnMoment = updateAutonomousCompanion(now, dt);
     const follow = angel.position.clone().sub(gor.position).setY(0);
-    if (now < (gor.userData.walkTogetherUntil ?? 0)) {
-      const side = new T.Vector3(-follow.z, 0, follow.x).normalize();
-      gor.position.addScaledVector(side, Math.sin(now * .004) * dt * 1.5);
-    } else if (follow.length() > 1.55) {
-      const step = Math.min(dt * 3.2, follow.length() - 1.45);
-      gor.position.addScaledVector(follow.normalize(), step);
+    if (!companionOnMoment) {
+      if (now < (gor.userData.walkTogetherUntil ?? 0)) {
+        const side = new T.Vector3(-follow.z, 0, follow.x).normalize();
+        gor.position.addScaledVector(side, Math.sin(now * .004) * dt * 1.5);
+      } else if (follow.length() > 1.55) {
+        const step = Math.min(dt * 3.2, follow.length() - 1.45);
+        gor.position.addScaledVector(follow.normalize(), step);
+      }
+      if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
     }
-    if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
   }
   const focus = ownGarden.editing ? ownGarden.focus.clone() : angel.position.clone();
   focus.y = 0;
@@ -433,8 +645,11 @@ function animate() {
     ghost.material.rotation = sprite.material.rotation;
     const emote = now < actor.userData.emoteUntil;
     const kind = actor.userData.emoteKind as string;
+    const sitting = emote && kind === 'sit';
     const pulse = emote && !reducedMotion ? Math.sin(now * .018) : 0;
-    sprite.position.y = 1.45 + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .04 : .2) : Math.sin(elapsed * 5 + index) * .025);
+    sprite.scale.y = sitting ? 2.48 : 2.8;
+    ghost.scale.copy(sprite.scale);
+    sprite.position.y = (sitting ? 1.28 : 1.45) + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .025 : .2) : Math.sin(elapsed * 5 + index) * .025);
     sprite.material.rotation = reducedMotion ? 0 : (kind === 'wave' && emote ? pulse * .08 : Math.sin(elapsed * 2 + index) * .018);
     const shadow = actor.children[1] as T.Mesh;
     shadow.scale.setScalar(1 + Math.max(0, pulse) * .15);
@@ -444,12 +659,45 @@ function animate() {
   interaction.disabled = !nearestCompanion;
   interaction.textContent = nearestCompanion ? 'سلام' : 'نزدیک شو';
   interaction.setAttribute('aria-label', nearestCompanion ? 'صحبت با گوراستاخ' : 'برای صحبت، به گوراستاخ نزدیک شو');
-  districtWorld.tick(elapsed, reducedMotion);
+  districtWorld.tick(elapsed, reducedMotion, atmosphere.windStrength);
+  noticeFreshBlooms(Date.now());
   ownGarden.tick(Date.now());
   if (scene.background instanceof T.Color) {
-    scene.background.lerp(ambienceTarget, reducedMotion ? 1 : 1 - Math.exp(-dt * .18));
-    if (scene.fog instanceof T.Fog) scene.fog.color.copy(scene.background);
+    const blend = reducedMotion ? 1 : 1 - Math.exp(-dt * .3);
+    skyColorTarget.set(atmosphere.skyColor).lerp(ambienceTarget, .14);
+    fogColorTarget.set(atmosphere.fogColor);
+    hemisphereColorTarget.set(atmosphere.hemisphereColor);
+    groundHemisphereColorTarget.copy(hemisphereColorTarget).lerp(groundHemisphereBase, .42);
+    sunColorTarget.set(atmosphere.sunColor);
+    scene.background.lerp(skyColorTarget, blend);
+    if (scene.fog instanceof T.Fog) scene.fog.color.lerp(fogColorTarget, blend);
+    skyLight.color.lerp(hemisphereColorTarget, blend);
+    skyLight.groundColor.lerp(groundHemisphereColorTarget, blend);
+    sun.color.lerp(sunColorTarget, blend);
+    sun.intensity = T.MathUtils.lerp(sun.intensity, 2 + atmosphere.sunIntensity * .32, blend);
+    skyLight.intensity = T.MathUtils.lerp(skyLight.intensity, 1.48 + atmosphere.sunIntensity * .16, blend);
+    softFill.intensity = T.MathUtils.lerp(softFill.intensity, .46 + atmosphere.sunIntensity * .09, blend);
   }
+  if (!reducedMotion && atmosphere.rainStrength > .015) {
+    rainStreaks.visible = true;
+    rainMaterial.opacity = atmosphere.rainStrength * .58;
+    rainStreaks.position.set(angel.position.x, 0, angel.position.z);
+    const positions = rainGeometry.getAttribute('position') as T.BufferAttribute;
+    for (let i = 0; i < rainDropCount; i++) {
+      const at = i * 2;
+      let y = positions.getY(at) - rainSpeeds[i] * dt;
+      if (y < .4) y += 17.5;
+      const x = positions.getX(at) + atmosphere.windStrength * dt * .18;
+      const z = positions.getZ(at);
+      positions.setXYZ(at, x, y, z);
+      positions.setXYZ(at + 1, x + .035, y - .24, z);
+    }
+    positions.needsUpdate = true;
+  } else {
+    rainStreaks.visible = false;
+    rainMaterial.opacity = 0;
+  }
+  updateAmbientAudio(atmosphere.windStrength, atmosphere.rainStrength, now);
   renderer.render(scene, camera);
 }
 

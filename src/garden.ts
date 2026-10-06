@@ -3,6 +3,7 @@ import { cellUnlocked, gridSize, growthStage, harvest, plantAt, species, type Pl
 
 type GardenCell = T.Mesh<T.CircleGeometry, T.MeshStandardMaterial> & { userData: { cell: { col: number; row: number } } };
 type BloomParticle = { mesh: T.Mesh; velocity: T.Vector3; bornAt: number };
+type Pollinator = { group: T.Group; x: number; z: number; phase: number; radius: number };
 
 const SOIL_COLORS = ['#809d69', '#86a36e', '#789562', '#8aa873'];
 const LEAF_COLORS = ['#639c70', '#75a96e', '#80ad73'];
@@ -22,14 +23,21 @@ export function createGarden(
 
   const plantRoot = new T.Group();
   root.add(plantRoot);
+  const reactionRoot = new T.Group();
+  reactionRoot.name = 'garden-reactions';
+  root.add(reactionRoot);
   const cells: GardenCell[] = [];
   const plantsById = new Map<string, T.Group>();
   const particles: BloomParticle[] = [];
+  const pollinators: Pollinator[] = [];
   let editing = false;
   let kind: Species = 'moonflower';
   let selected: string | null = null;
   let lastTick = 0;
   let stageSignature = '';
+  let reactionSignature = '';
+  const baseBedColor = new T.Color('#76915e');
+  const targetBedColor = baseBedColor.clone();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
   const geometries = {
@@ -41,10 +49,15 @@ export function createGarden(
     soil: new T.CircleGeometry(.48, 14),
     ring: new T.TorusGeometry(.34, .022, 5, 24),
     sparkle: new T.SphereGeometry(.045, 7, 5),
+    glow: new T.CircleGeometry(.52, 24),
+    glowRing: new T.TorusGeometry(.43, .018, 4, 24),
+    butterflyWing: new T.SphereGeometry(1, 9, 7),
+    butterflyBody: new T.CylinderGeometry(.012, .018, .15, 5),
     plot: new T.CircleGeometry(8.25, 64),
     plotRim: new T.TorusGeometry(8.22, .14, 7, 64),
   };
   const materials = new Map<string, T.MeshStandardMaterial>();
+  const reactionMaterials = new Map<string, T.MeshBasicMaterial>();
   const material = (color: string) => {
     let value = materials.get(color);
     if (!value) {
@@ -55,6 +68,22 @@ export function createGarden(
   };
   const make = (geometry: T.BufferGeometry, color: string, parent: T.Object3D) => {
     const mesh = new T.Mesh(geometry, material(color));
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    parent.add(mesh);
+    return mesh;
+  };
+  const reactionMaterial = (color: string, opacity: number) => {
+    const key = `${color}:${opacity}`;
+    let value = reactionMaterials.get(key);
+    if (!value) {
+      value = new T.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, toneMapped: false });
+      reactionMaterials.set(key, value);
+    }
+    return value;
+  };
+  const makeReaction = (geometry: T.BufferGeometry, color: string, opacity: number, parent: T.Object3D) => {
+    const mesh = new T.Mesh(geometry, reactionMaterial(color, opacity));
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     parent.add(mesh);
@@ -103,6 +132,77 @@ export function createGarden(
   function removePlants() {
     for (const child of [...plantRoot.children]) plantRoot.remove(child);
     plantsById.clear();
+  }
+
+  function clearReactions() {
+    for (const child of [...reactionRoot.children]) reactionRoot.remove(child);
+    pollinators.length = 0;
+  }
+
+  function addButterfly(x: number, z: number, phase: number, radius: number) {
+    const group = new T.Group();
+    group.name = 'garden-butterfly';
+    for (const [side, color] of [[-1, '#f8d477'], [1, '#eaa6c6']] as const) {
+      const wing = makeReaction(geometries.butterflyWing, color, .92, group);
+      wing.position.set(side * .065, 0, 0);
+      wing.scale.set(.073, .105, .028);
+      wing.rotation.z = side * -.34;
+    }
+    const body = makeReaction(geometries.butterflyBody, '#655b59', 1, group);
+    body.position.y = -.005;
+    group.position.set(x, .68, z);
+    reactionRoot.add(group);
+    pollinators.push({ group, x, z, phase, radius });
+  }
+
+  function updateGardenReactions(state: State, now: number) {
+    // Seedlings do not trigger reactions; only visibly flowering plants count.
+    const flowers = state.plants
+      .filter(p => growthStage(p, now) >= 2)
+      .slice()
+      .sort((a, b) => a.row - b.row || a.col - b.col || a.species.localeCompare(b.species));
+    const signature = flowers.map(p => `${p.species}:${p.col}:${p.row}`).join('|');
+    if (signature === reactionSignature) return;
+    reactionSignature = signature;
+    clearReactions();
+
+    const flowerTypes = new Set(flowers.map(p => p.species));
+    const richness = Math.max(0, Math.min(1, (flowerTypes.size - 1) / 3));
+    const richerBed = new T.Color('#b0a46b');
+    targetBedColor.copy(baseBedColor).lerp(richerBed, richness * .38);
+    if (reducedMotion) gardenBed.material.color.copy(targetBedColor);
+
+    // Moonflower and starlily blooms cast a quiet pool and ring of color on the soil.
+    for (const p of flowers) {
+      if (p.species !== 'moonflower' && p.species !== 'starlily') continue;
+      const x = p.col - 3.5;
+      const z = p.row - 3.5;
+      const color = p.species === 'moonflower' ? '#bda9ff' : '#f5a8c8';
+      const glow = makeReaction(geometries.glow, color, .12, reactionRoot);
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.set(x, .081, z);
+      glow.scale.set(.86, .86, 1);
+      const ring = makeReaction(geometries.glowRing, color, .44, reactionRoot);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, .09, z);
+    }
+
+    // Mixed-species pockets attract butterflies. Centers and phases come only from
+    // plant coordinates and species, so a layout always produces the same response.
+    const centers: Array<{ x: number; z: number; phase: number }> = [];
+    for (const flower of flowers) {
+      const nearby = flowers.filter(other => Math.hypot(other.col - flower.col, other.row - flower.row) <= 2.35);
+      if (new Set(nearby.map(p => p.species)).size < 2) continue;
+      const x = nearby.reduce((sum, p) => sum + p.col - 3.5, 0) / nearby.length;
+      const z = nearby.reduce((sum, p) => sum + p.row - 3.5, 0) / nearby.length;
+      if (centers.some(center => Math.hypot(center.x - x, center.z - z) < 1.65)) continue;
+      const phase = ((flower.col + 12) * 17 + (flower.row + 12) * 31) % 100 / 100 * Math.PI * 2;
+      centers.push({ x, z, phase });
+    }
+    centers.slice(0, 6).forEach((center, index) => {
+      addButterfly(center.x, center.z, center.phase, .28 + (index % 2) * .08);
+      if (centers.length < 3) addButterfly(center.x + .24, center.z + .12, center.phase + Math.PI, .22);
+    });
   }
 
   function addLeaves(group: T.Group, p: Plant, y: number, scale = 1) {
@@ -192,6 +292,7 @@ export function createGarden(
     }
     removePlants();
     for (const p of state.plants) renderPlant(p, now);
+    updateGardenReactions(state, now);
     const selectedPlant = state.plants.find(p => p.id === selected);
     selection.visible = !!selectedPlant;
     if (selectedPlant) selection.position.set(selectedPlant.col - 3.5, .13, selectedPlant.row - 3.5);
@@ -369,6 +470,18 @@ export function createGarden(
         const pop = .72 + .28 * (1 - Math.pow(1 - age, 3));
         plant.scale.setScalar(pop * (1 + Math.sin(now * .0018 + sway) * .018));
       }
+      for (const pollinator of pollinators) {
+        const angle = now * .00048 + pollinator.phase;
+        pollinator.group.position.set(
+          pollinator.x + Math.cos(angle) * pollinator.radius,
+          .68 + Math.sin(angle * 1.7) * .045,
+          pollinator.z + Math.sin(angle) * pollinator.radius * .72,
+        );
+        pollinator.group.rotation.y = -angle;
+      }
+      gardenBed.material.color.lerp(targetBedColor, 1 - Math.exp(-delta * 2.2));
+    } else {
+      gardenBed.material.color.copy(targetBedColor);
     }
 
     for (let i = particles.length - 1; i >= 0; i--) {
