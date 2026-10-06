@@ -254,7 +254,71 @@ test('3.3: pool overflow (spawning >32 footsteps) recycles oldest instances grac
   assert.strictEqual(fx.footstepPool!.length, 32, 'Pool size must remain strictly 32');
 });
 
-test('3.4: falling star particles age, reset, and recycle within the 64-particle pool', () => {
+test('3.4: live footsteps share one dynamic draw mesh and preserve the original fade', () => {
+  const scene = new T.Scene();
+  const fx = createVisualFXSystem(scene);
+  const batch = fx.footstepBatchMesh!;
+  const positions = batch.geometry.getAttribute('position');
+  const colors = batch.geometry.getAttribute('color');
+
+  assert.ok(batch, 'the decals must be rendered by a shared batch mesh');
+  assert.equal(positions.count, 32 * 20);
+  assert.equal(colors.itemSize, 4, 'vertex alpha carries each decal’s independent fade');
+  assert.equal(batch.geometry.getIndex()!.count, 32 * 18 * 3);
+  assert.equal(batch.parent, scene.children[0], 'only the batch is attached to the scene');
+  assert.ok(fx.footstepPool!.every((mesh) => mesh.parent === null), 'logical pool entries must not submit extra draws');
+
+  fx.update(0, 100);
+  fx.spawnFootstepGlow(new T.Vector3(5, 0, 10));
+  assert.equal(fx.footstepPool![0].visible, true);
+  fx.update(0, 100);
+  assert.equal(batch.visible, true);
+
+  const positionArray = positions.array as Float32Array;
+  const colorArray = colors.array as Float32Array;
+  assert.ok(Math.abs(positionArray[0] - 5) < 1e-6);
+  assert.ok(Math.abs(positionArray[1] - 0.028) < 1e-6);
+  assert.ok(Math.abs(positionArray[2] - 10) < 1e-6);
+  assert.ok(Math.abs(colorArray[3] - 0.68) < 1e-6);
+
+  fx.update(0, 1300);
+  assert.ok(colorArray[3] > 0 && colorArray[3] < 0.68, 'the batched decal keeps its smooth fade');
+  fx.update(0, 2000);
+  fx.spawnFootstepGlow(new T.Vector3(7, 0, 12));
+  fx.update(0, 2000);
+  fx.update(0, 2600);
+  assert.equal(fx.footstepPool![0].visible, false);
+  assert.equal(batch.visible, true, 'one expired slot must not hide a newer decal');
+  assert.equal(colorArray[3], 0, 'expired vertices must be cleared while other decals remain');
+  assert.ok(colorArray[20 * 4 + 3] > 0, 'the newer decal keeps rendering in the same batch');
+  fx.update(0, 4500);
+  assert.equal(batch.visible, false, 'the shared draw is skipped when all decals expire');
+  fx.dispose!();
+});
+
+test('3.5: dormant star buffers stay clean and the pooled point mesh hides when empty', () => {
+  const scene = new T.Scene();
+  const fx = createVisualFXSystem(scene);
+  const starPosition = fx.starGeometry!.getAttribute('position') as T.BufferAttribute;
+  const starColor = fx.starGeometry!.getAttribute('color') as T.BufferAttribute;
+
+  fx.update(1 / 60, 16);
+  fx.update(1 / 60, 32);
+  assert.equal(starPosition.version, 0, 'empty point data should not upload every frame');
+  assert.equal(starColor.version, 0);
+  assert.equal(fx.activeStarCount, 0);
+  assert.equal(scene.getObjectByName('visual-fx-stars')!.visible, false);
+
+  fx.update(0, 50);
+  fx.updateRibbonTrails(new T.Vector3(1, 4, 0), new T.Vector3(1, 4, 1), true);
+  fx.update(1 / 60, 66);
+  assert.ok(fx.activeStarCount > 0);
+  assert.ok(starPosition.version > 0 && starColor.version > 0, 'live star particles upload their changed buffers');
+  assert.equal(scene.getObjectByName('visual-fx-stars')!.visible, true);
+  fx.dispose!();
+});
+
+test('3.6: falling star particles age, reset, and recycle within the 64-particle pool', () => {
   const scene = new T.Scene();
   const fx = createVisualFXSystem(scene);
 
@@ -459,29 +523,82 @@ test('7.1: reduced-motion mode sets dust motes drift velocity to zero (stationar
   assert.strictEqual(posArr[2], initialZ, 'Dust Z position must not drift in reduced motion');
 });
 
-test('7.2: reduced-motion mode suppresses motion blur trails on ribbons', () => {
+test('7.2: reduced-motion mode freezes active ribbons and hand connections', () => {
   const scene = new T.Scene();
-  const fx = createVisualFXSystem(scene, { reducedMotion: true });
+  const fx = createVisualFXSystem(scene);
 
-  fx.updateRibbonTrails(new T.Vector3(1, 2, 3), new T.Vector3(2, 2, 3), true);
-  fx.update(0.016, 100);
+  for (let i = 0; i < 5; i++) {
+    fx.updateRibbonTrails(new T.Vector3(i, 2, 3), new T.Vector3(i + 1, 2, 3), true);
+    fx.update(0.016, i * 16);
+  }
+  fx.setHandHoldConnection(new T.Vector3(0, 1, 0), new T.Vector3(1, 1, 0), true);
+  fx.update(0.016, 80);
 
   const posArr = fx.ribbonGeometry!.getAttribute('position').array as Float32Array;
-  assert.ok(Number.isFinite(posArr[0]));
+  const before = Array.from(posArr);
+  const connectionPosArr = fx.connectionMesh!.geometry.getAttribute('position').array as Float32Array;
+  const connectionBefore = Array.from(connectionPosArr);
+  const head = fx.ribbonHead;
+  const activeCount = fx.ribbonActiveCount;
+  fx.setReducedMotion!(true);
+  fx.update(5, 5000);
+  fx.updateRibbonTrails(new T.Vector3(50, 20, 30), new T.Vector3(60, 20, 30), true);
+  fx.setHandHoldConnection(new T.Vector3(30, 20, 10), new T.Vector3(60, 20, 10), true);
+  fx.update(5, 10000);
+
+  assert.deepStrictEqual(Array.from(posArr), before, 'Ribbon vertices must remain fixed while reduced motion is enabled');
+  assert.deepStrictEqual(Array.from(connectionPosArr), connectionBefore, 'Hand connection geometry must remain fixed while reduced motion is enabled');
+  assert.strictEqual(fx.ribbonHead, head, 'Reduced-motion samples must not advance the trail ring buffer');
+  assert.strictEqual(fx.ribbonActiveCount, activeCount);
 });
 
-test('7.3: reduced-motion mode freezes star twinkle oscillations (no rapid flashing)', () => {
+test('7.3: reduced-motion mode freezes live particle positions and colors at runtime', () => {
   const scene = new T.Scene();
-  const fx = createVisualFXSystem(scene, { reducedMotion: true });
+  const fx = createVisualFXSystem(scene);
 
   for (let i = 0; i < 10; i++) {
     fx.update(0.016, i * 20);
     fx.updateRibbonTrails(new T.Vector3(i, 4, 0), new T.Vector3(i, 4, 1), true);
   }
 
+  assert.ok((fx.activeStarCount ?? 0) > 0, 'Flight should create particles before the pause');
+  const posArr = fx.starGeometry!.getAttribute('position').array as Float32Array;
   const colArr = fx.starGeometry!.getAttribute('color').array as Float32Array;
-  // In reduced motion, sparkle factor is constant 0.70 rather than fluctuating
-  assert.ok(Number.isFinite(colArr[0]));
+  const beforePositions = Array.from(posArr);
+  const beforeColors = Array.from(colArr);
+  const beforeCount = fx.activeStarCount;
+
+  fx.setReducedMotion!(true);
+  for (let i = 0; i < 10; i++) fx.update(0.5, 1000 + i * 500);
+
+  assert.deepStrictEqual(Array.from(posArr), beforePositions, 'Live particles must not move or expire during the pause');
+  assert.deepStrictEqual(Array.from(colArr), beforeColors, 'Particle colors and alpha must remain fixed during the pause');
+  assert.strictEqual(fx.activeStarCount, beforeCount);
+});
+
+test('7.4: reduced motion freezes active footstep halos and pauses their lifetime across runtime toggles', () => {
+  const scene = new T.Scene();
+  const fx = createVisualFXSystem(scene);
+  fx.update(0.016, 1000);
+  fx.spawnFootstepGlow(new T.Vector3(5, 0, 10));
+  fx.update(0.1, 1100);
+
+  const halo = fx.footstepPool![0];
+  const beforeScale = halo.scale.x;
+  const beforeOpacity = (halo.material as T.MeshBasicMaterial).opacity;
+  fx.setReducedMotion!(true);
+  fx.update(2, 3100);
+  fx.spawnFootstepGlow(new T.Vector3(7, 0, 12));
+
+  assert.strictEqual(halo.scale.x, beforeScale, 'An active halo must stop expanding while reduced motion is enabled');
+  assert.strictEqual((halo.material as T.MeshBasicMaterial).opacity, beforeOpacity, 'An active halo must stop fading while reduced motion is enabled');
+  assert.strictEqual(fx.footstepPool![1].visible, false, 'No new halo should spawn during reduced motion');
+
+  fx.setReducedMotion!(false);
+  fx.update(0.016, 3116);
+  assert.ok(halo.visible, 'A paused halo must not expire during the reduced-motion interval');
+  assert.ok(halo.scale.x >= beforeScale && halo.scale.x - beforeScale < 0.02, 'Halo age should resume from its paused age');
+  assert.ok((halo.material as T.MeshBasicMaterial).opacity <= beforeOpacity, 'Halo fade should resume after reduced motion ends');
 });
 
 // =========================================================================

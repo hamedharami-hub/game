@@ -2,8 +2,8 @@ export const SAVE_KEY = 'dream-caravan:garden:v1';
 export const resources = ['seed', 'crystal', 'feather'] as const;
 export type Resource = typeof resources[number];
 export type Invention = 'lantern' | 'sprout';
-export interface State { version: 1; collected: Resource[]; invention: Invention | null; restored: boolean; plotLevel: number; plants: Plant[]; essence: number; houseLevel: number; projects: Project[]; hybrids: boolean; aura: number; lastGatherAt: number | null; visited: District[]; worldSeed: number; regionLevels: Record<District,number>; decorations: Decoration[]; gorHair: HairColor; angelHair:HairColor; gorOutfit:Outfit; angelOutfit:Outfit }
-export const initialState = (): State => ({ version: 1, collected: [], invention: null, restored: false, plotLevel: 5, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
+export interface State { version: 1; collected: Resource[]; invention: Invention | null; restored: boolean; plotLevel: number; plants: Plant[]; essence: number; houseLevel: number; projects: Project[]; hybrids: boolean; aura: number; lastGatherAt: number | null; visited: District[]; worldSeed: number; regionLevels: Record<District,number>; decorations: Decoration[]; landscapePlacements: LandscapePlacement[]; gorHair: HairColor; angelHair:HairColor; gorOutfit:Outfit; angelOutfit:Outfit }
+export const initialState = (): State => ({ version: 1, collected: [], invention: null, restored: false, plotLevel: 5, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],landscapePlacements:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
 export function decodeSave(raw: string | null): State {
   try {
     const s = JSON.parse(raw ?? 'null');
@@ -24,6 +24,7 @@ export function decodeSave(raw: string | null): State {
       hybrids:s.hybrids===true,lastGatherAt:typeof s.lastGatherAt==='number'&&Number.isFinite(s.lastGatherAt)&&s.lastGatherAt>=0?s.lastGatherAt:null,
       worldSeed:Math.max(1,bounded(s.worldSeed,2147483647)),gorHair:hairColors.includes(s.gorHair)?s.gorHair:'white',angelHair:hairColors.includes(s.angelHair)?s.angelHair:'black',gorOutfit:outfits.includes(s.gorOutfit)?s.gorOutfit:'classic',angelOutfit:outfits.includes(s.angelOutfit)?s.angelOutfit:'classic',regionLevels:Object.fromEntries(districtIds.map(id=>[id,bounded(s.regionLevels?.[id],20)])) as Record<District,number>,
       decorations:decodeDecorations(s),
+      landscapePlacements:decodeLandscapePlacements(s.landscapePlacements),
       visited:Array.isArray(s.visited)?[...new Set<District>(['garden',...s.visited.filter((id:unknown)=>districtIds.includes(id as District))])]:['garden']
     };
   } catch { return initialState(); }
@@ -167,4 +168,107 @@ export type Outfit=typeof outfits[number];
 export function setAppearance(s:State,who:'angel'|'gor',hair:HairColor,outfit:Outfit):State{
  if(!['angel','gor'].includes(who)||!hairColors.includes(hair)||!outfits.includes(outfit))return s;
  if(who==='angel')return {...s,angelHair:hair,angelOutfit:outfit};return {...s,gorHair:hair,gorOutfit:outfit};
+}
+
+/** All freeform props are kept on the same walkable land, in world-space units. */
+export const LANDSCAPE_RADIUS = 82;
+export const LANDSCAPE_PLACEMENT_CLEARANCE = 0.12;
+export const landscapeKinds = [
+  'tree', 'spirit-tree', 'flower', 'flower-clump', 'garden-bed',
+  'cottage', 'cabin', 'gazebo', 'wooden-bridge', 'well',
+] as const;
+export type LandscapeKind = typeof landscapeKinds[number];
+export interface LandscapePlacement {
+  /** Caller-generated and persistent; this module deliberately does not use randomness. */
+  id: string;
+  kind: LandscapeKind;
+  x: number;
+  z: number;
+  /** Radians, normalized to [0, 2π). */
+  rotation: number;
+}
+
+export const landscapeFootprintRadii: Readonly<Record<LandscapeKind, number>> = {
+  tree: 2.5,
+  'spirit-tree': 3.5,
+  flower: 0.35,
+  'flower-clump': 1.1,
+  // The movable live planting garden uses an 8.25m plot with a small rim margin.
+  'garden-bed': 8.35,
+  cottage: 5.5,
+  cabin: 4.5,
+  gazebo: 4,
+  'wooden-bridge': 3.5,
+  well: 1.5,
+};
+
+export function isLandscapePositionValid(x: number, z: number, kind?: LandscapeKind): boolean {
+  const footprint = kind === undefined ? 0 : landscapeFootprintRadii[kind];
+  return Number.isFinite(x) && Number.isFinite(z) && Number.isFinite(footprint)
+    && Math.hypot(x, z) <= LANDSCAPE_RADIUS - footprint;
+}
+
+export function placeLandscapePlacement(s: State, placement: LandscapePlacement): State {
+  if (!isLandscapePlacementValid(placement)
+    || s.landscapePlacements.some(p => p.id === placement.id)
+    || !hasLandscapePlacementClearance(placement, s.landscapePlacements)) return s;
+  return { ...s, landscapePlacements: [...s.landscapePlacements, normalizeLandscapePlacement(placement)] };
+}
+
+export function moveLandscapePlacement(s: State, id: string, x: number, z: number, rotation?: number): State {
+  const current = s.landscapePlacements.find(p => p.id === id);
+  if (!current || !isLandscapePositionValid(x, z, current.kind) || (rotation !== undefined && !Number.isFinite(rotation))) return s;
+  const moved = { ...current, x, z, rotation: rotation === undefined ? current.rotation : normalizeRotation(rotation) };
+  if (!hasLandscapePlacementClearance(moved, s.landscapePlacements, id)) return s;
+  return {
+    ...s,
+    landscapePlacements: s.landscapePlacements.map(p => p.id === id
+      ? moved
+      : p),
+  };
+}
+
+export function removeLandscapePlacement(s: State, id: string): State {
+  if (!s.landscapePlacements.some(p => p.id === id)) return s;
+  return { ...s, landscapePlacements: s.landscapePlacements.filter(p => p.id !== id) };
+}
+
+function isLandscapePlacementValid(value: unknown): value is LandscapePlacement {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Partial<LandscapePlacement>;
+  return typeof p.id === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(p.id)
+    && typeof p.kind === 'string' && landscapeKinds.includes(p.kind as LandscapeKind)
+    && isLandscapePositionValid(p.x as number, p.z as number, p.kind as LandscapeKind)
+    && typeof p.rotation === 'number' && Number.isFinite(p.rotation);
+}
+
+function normalizeLandscapePlacement(p: LandscapePlacement): LandscapePlacement {
+  return { id: p.id, kind: p.kind, x: p.x, z: p.z, rotation: normalizeRotation(p.rotation) };
+}
+
+function normalizeRotation(rotation: number): number {
+  const turn = Math.PI * 2;
+  return ((rotation % turn) + turn) % turn;
+}
+
+function hasLandscapePlacementClearance(
+  placement: LandscapePlacement,
+  existing: readonly LandscapePlacement[],
+  ignoreId?: string,
+): boolean {
+  const radius = landscapeFootprintRadii[placement.kind];
+  return existing.every(other => other.id === ignoreId || Math.hypot(placement.x - other.x, placement.z - other.z)
+    >= radius + landscapeFootprintRadii[other.kind] + LANDSCAPE_PLACEMENT_CLEARANCE);
+}
+
+function decodeLandscapePlacements(value: unknown): LandscapePlacement[] {
+  if (!Array.isArray(value)) return [];
+  const placements: LandscapePlacement[] = [];
+  for (const entry of value) {
+    if (!isLandscapePlacementValid(entry)) continue;
+    const placement = normalizeLandscapePlacement(entry);
+    if (placements.some(p => p.id === placement.id) || !hasLandscapePlacementClearance(placement, placements)) continue;
+    placements.push(placement);
+  }
+  return placements;
 }

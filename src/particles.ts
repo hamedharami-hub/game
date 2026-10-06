@@ -32,6 +32,8 @@ export interface VisualFXSystem {
   readonly starDomeMesh?: T.Points;
   readonly connectionMesh?: T.Mesh;
   readonly footstepPool?: readonly T.Mesh[];
+  /** All live footstep decals are merged into this single draw call. */
+  readonly footstepBatchMesh?: T.Mesh;
   readonly activeStarCount?: number;
   readonly ribbonHead?: number;
   readonly ribbonActiveCount?: number;
@@ -164,6 +166,7 @@ interface RibbonState {
   lastY: number;
   lastZ: number;
   timer: number;
+  cleared: boolean;
   mesh: T.Mesh;
 }
 
@@ -241,6 +244,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       lastY: -9999,
       lastZ: -9999,
       timer: 0,
+      cleared: true,
       mesh,
     };
   }
@@ -270,14 +274,18 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     if (state.fadeAlpha <= 0.0001 && !flying) {
       state.fadeAlpha = 0.0;
       state.mesh.visible = false;
-      for (let s = 0; s <= RIBBON_SEGMENTS; s++) {
-        colArr[2 * s * 4 + 3] = 0.0;
-        colArr[(2 * s + 1) * 4 + 3] = 0.0;
+      if (!state.cleared) {
+        for (let s = 0; s <= RIBBON_SEGMENTS; s++) {
+          colArr[2 * s * 4 + 3] = 0.0;
+          colArr[(2 * s + 1) * 4 + 3] = 0.0;
+        }
+        colAttr.needsUpdate = true;
+        state.cleared = true;
       }
-      colAttr.needsUpdate = true;
       return;
     }
     state.mesh.visible = true;
+    state.cleared = false;
 
     const baseW = isAngel ? 0.30 : 0.35;
     const head = state.head;
@@ -411,6 +419,8 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
   const starB = new Float32Array(STAR_COUNT);
   const starActive = new Uint8Array(STAR_COUNT);
   let starCursor = 0;
+  let activeStarCount = 0;
+  let starsDirty = false;
   let lastFlightStarSpawn = 0;
 
   for (let i = 0; i < STAR_COUNT; i++) {
@@ -433,6 +443,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
 
   const starMesh = new T.Points(starGeom, starMat);
   starMesh.name = 'visual-fx-stars';
+  starMesh.visible = false;
   rootGroup.add(starMesh);
 
   function spawnStar(
@@ -443,6 +454,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
   ) {
     const idx = starCursor;
     starCursor = (starCursor + 1) % STAR_COUNT;
+    if (!starActive[idx]) activeStarCount++;
     starX[idx] = x;
     starY[idx] = y;
     starZ[idx] = z;
@@ -457,6 +469,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     starActive[idx] = 1;
     starTwinkleFreq[idx] = 8.0 + Math.random() * 10.0;
     starTwinklePhase[idx] = Math.random() * Math.PI * 2;
+    starsDirty = true;
   }
 
   // ==========================================
@@ -606,13 +619,58 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
   // 6. FOOTSTEP DECAL RING BUFFER POOL (32, Y = 0.028)
   // ==========================================
   const FOOTSTEP_POOL_SIZE = 32;
-  const footstepGeom = new T.CircleGeometry(0.34, 18);
+  const FOOTSTEP_SEGMENTS = 18;
+  const footstepGeom = new T.CircleGeometry(0.34, FOOTSTEP_SEGMENTS);
   const footstepMeshes: T.Mesh[] = [];
   const footstepBornAt = new Float64Array(FOOTSTEP_POOL_SIZE);
   const footstepActive = new Uint8Array(FOOTSTEP_POOL_SIZE);
   let footstepCursor = 0;
+  let activeFootstepCount = 0;
 
-  for (let i = 0; i < FOOTSTEP_POOL_SIZE; i++) {
+  // A merged dynamic buffer replaces up to 32 transparent mesh submissions.
+  // Keep the familiar logical pool meshes for state/debug inspection, but only
+  // this one mesh is attached to the scene and sent through the renderer.
+  const sourceFootstepPositions = footstepGeom.getAttribute('position').array as Float32Array;
+  const FOOTSTEP_VERTICES_PER_DECAL = sourceFootstepPositions.length / 3;
+  const FOOTSTEP_INDICES_PER_DECAL = FOOTSTEP_SEGMENTS * 3;
+  const footstepPositions = new Float32Array(FOOTSTEP_POOL_SIZE * FOOTSTEP_VERTICES_PER_DECAL * 3);
+  const footstepColors = new Float32Array(FOOTSTEP_POOL_SIZE * FOOTSTEP_VERTICES_PER_DECAL * 4);
+  const footstepIndices = new Uint16Array(FOOTSTEP_POOL_SIZE * FOOTSTEP_INDICES_PER_DECAL);
+  const sourceFootstepIndices = footstepGeom.getIndex()!.array as Uint16Array;
+  for (let decal = 0; decal < FOOTSTEP_POOL_SIZE; decal++) {
+    const vertexOffset = decal * FOOTSTEP_VERTICES_PER_DECAL;
+    const indexOffset = decal * FOOTSTEP_INDICES_PER_DECAL;
+    for (let vertex = 0; vertex < FOOTSTEP_VERTICES_PER_DECAL; vertex++) {
+      const from = vertex * 3;
+      const to = (vertexOffset + vertex) * 3;
+      footstepPositions[to] = sourceFootstepPositions[from];
+      footstepPositions[to + 1] = sourceFootstepPositions[from + 1];
+      footstepPositions[to + 2] = sourceFootstepPositions[from + 2];
+    }
+    for (let index = 0; index < FOOTSTEP_INDICES_PER_DECAL; index++) {
+      footstepIndices[indexOffset + index] = vertexOffset + sourceFootstepIndices[index];
+    }
+  }
+
+  const footstepBatchGeom = new T.BufferGeometry();
+  footstepBatchGeom.setAttribute('position', new T.BufferAttribute(footstepPositions, 3).setUsage(T.DynamicDrawUsage));
+  footstepBatchGeom.setAttribute('color', new T.BufferAttribute(footstepColors, 4).setUsage(T.DynamicDrawUsage));
+  footstepBatchGeom.setIndex(new T.BufferAttribute(footstepIndices, 1));
+  const footstepBatchMat = new T.MeshBasicMaterial({
+    color: '#fff3c4',
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: T.AdditiveBlending,
+  });
+  const footstepBatchMesh = new T.Mesh(footstepBatchGeom, footstepBatchMat);
+  footstepBatchMesh.name = 'visual-fx-footsteps-batched';
+  footstepBatchMesh.renderOrder = 3;
+  footstepBatchMesh.frustumCulled = false; // vertices move across the full garden
+  footstepBatchMesh.visible = false;
+  rootGroup.add(footstepBatchMesh);
+
+  for (let decal = 0; decal < FOOTSTEP_POOL_SIZE; decal++) {
     const mat = new T.MeshBasicMaterial({
       color: '#fff3c4',
       transparent: true,
@@ -625,13 +683,13 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     mesh.position.set(0, 0.028, 0);
     mesh.renderOrder = 3;
     mesh.visible = false;
-    rootGroup.add(mesh);
     footstepMeshes.push(mesh);
   }
 
   // Internal state
   let currentNightIntensity = 0.0;
   let internalNow = 0;
+  let reducedMotionStartedAt: number | null = reducedMotion ? 0 : null;
 
   // ==========================================
   // API IMPLEMENTATION
@@ -641,6 +699,10 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       const safeDt = Number.isFinite(dt) ? Math.max(0.0, Math.min(10.0, dt)) : 0.0;
       const safeNow = Number.isFinite(now) ? Math.max(0.0, now) : 0.0;
       internalNow = safeNow;
+
+      // Reduced motion pauses the effect clock and every active effect in place.
+      // In particular, don't age particles, fade ribbons, or move footstep halos.
+      if (reducedMotion) return;
 
       // Update camera position scratch vector
       if (cameraRef) {
@@ -658,15 +720,16 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       const starColArr = starColAttr.array as Float32Array;
 
       for (let i = 0; i < STAR_COUNT; i++) {
-        if (!starActive[i]) {
-          starPosArr[i * 3 + 1] = -9999;
-          starColArr[i * 4 + 3] = 0;
-          continue;
-        }
+        if (!starActive[i]) continue;
+
+        // Active points move or twinkle every frame; dormant slots stay on the
+        // sentinel written at construction/expiry and do not need a GPU upload.
+        starsDirty = true;
 
         starAge[i] += safeDt;
         if (starAge[i] >= starLifespan[i]) {
           starActive[i] = 0;
+          activeStarCount--;
           starPosArr[i * 3 + 1] = -9999;
           starColArr[i * 4 + 3] = 0;
           continue;
@@ -703,8 +766,12 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
         starColArr[i * 4 + 2] = Math.min(1.0, starB[i] * (0.8 + 0.5 * sparkle));
         starColArr[i * 4 + 3] = alpha;
       }
-      starPosAttr.needsUpdate = true;
-      starColAttr.needsUpdate = true;
+      starMesh.visible = activeStarCount > 0;
+      if (starsDirty) {
+        starPosAttr.needsUpdate = true;
+        starColAttr.needsUpdate = true;
+        starsDirty = false;
+      }
 
       // 2. Update Connection Arc
       if (connActive) {
@@ -820,19 +887,47 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       // 4. Update Footstep Decals
       for (let i = 0; i < FOOTSTEP_POOL_SIZE; i++) {
         if (!footstepActive[i]) continue;
+        const mesh = footstepMeshes[i];
         const age = (safeNow - footstepBornAt[i]) / 1000.0;
         const p = calculateFootstepParams(age);
         if (!p.active) {
           footstepActive[i] = 0;
-          footstepMeshes[i].visible = false;
+          activeFootstepCount--;
+          mesh.visible = false;
+          (mesh.material as T.MeshBasicMaterial).opacity = 0;
+          const firstColor = i * FOOTSTEP_VERTICES_PER_DECAL * 4;
+          for (let vertex = 0; vertex < FOOTSTEP_VERTICES_PER_DECAL; vertex++) {
+            footstepColors[firstColor + vertex * 4 + 3] = 0;
+          }
         } else {
-          footstepMeshes[i].scale.setScalar(p.scale);
-          (footstepMeshes[i].material as T.MeshBasicMaterial).opacity = p.opacity;
+          mesh.scale.setScalar(p.scale);
+          (mesh.material as T.MeshBasicMaterial).opacity = p.opacity;
+
+          const vertexOffset = i * FOOTSTEP_VERTICES_PER_DECAL;
+          for (let vertex = 0; vertex < FOOTSTEP_VERTICES_PER_DECAL; vertex++) {
+            const sourceAt = vertex * 3;
+            const targetAt = (vertexOffset + vertex) * 3;
+            footstepPositions[targetAt] = mesh.position.x + sourceFootstepPositions[sourceAt] * mesh.scale.x;
+            footstepPositions[targetAt + 1] = mesh.position.y + sourceFootstepPositions[sourceAt + 2] * mesh.scale.y;
+            footstepPositions[targetAt + 2] = mesh.position.z - sourceFootstepPositions[sourceAt + 1] * mesh.scale.z;
+
+            const colorAt = (vertexOffset + vertex) * 4;
+            footstepColors[colorAt] = 1;
+            footstepColors[colorAt + 1] = 1;
+            footstepColors[colorAt + 2] = 1;
+            footstepColors[colorAt + 3] = p.opacity;
+          }
         }
+      }
+      footstepBatchMesh.visible = activeFootstepCount > 0;
+      if (activeFootstepCount > 0) {
+        footstepBatchGeom.attributes.position.needsUpdate = true;
+        footstepBatchGeom.attributes.color.needsUpdate = true;
       }
     },
 
     updateRibbonTrails(angelPos: T.Vector3, gorPos: T.Vector3, flying: boolean): void {
+      if (reducedMotion) return;
       const dt = 1 / 30; // standard sample delta
 
       // Update Angel ring buffer
@@ -898,6 +993,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     },
 
     spawnFootstepGlow(position: T.Vector3): void {
+      if (reducedMotion) return;
       const idx = footstepCursor;
       footstepCursor = (footstepCursor + 1) % FOOTSTEP_POOL_SIZE;
       const mesh = footstepMeshes[idx];
@@ -906,6 +1002,7 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       (mesh.material as T.MeshBasicMaterial).opacity = 0.68;
       mesh.visible = true;
       footstepBornAt[idx] = internalNow;
+      if (!footstepActive[idx]) activeFootstepCount++;
       footstepActive[idx] = 1;
     },
 
@@ -942,6 +1039,25 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     },
 
     setReducedMotion(reduced: boolean): void {
+      if (reduced === reducedMotion) return;
+      if (reduced) {
+        reducedMotionStartedAt = internalNow;
+        reducedMotion = true;
+        return;
+      }
+
+      const pausedDuration = reducedMotionStartedAt === null
+        ? 0
+        : Math.max(0, internalNow - reducedMotionStartedAt);
+      if (pausedDuration > 0) {
+        for (let i = 0; i < FOOTSTEP_POOL_SIZE; i++) {
+          if (footstepActive[i]) footstepBornAt[i] += pausedDuration;
+        }
+      }
+      // Avoid an immediate burst of particles after a long reduced-motion pause.
+      lastFlightStarSpawn = internalNow;
+      lastConnStarSpawn = internalNow;
+      reducedMotionStartedAt = null;
       reducedMotion = reduced;
     },
 
@@ -960,6 +1076,9 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
       starDomeGeom.dispose();
       starDomeMat.dispose();
       footstepGeom.dispose();
+      footstepBatchGeom.dispose();
+      footstepBatchMat.dispose();
+      glintTexture?.dispose();
       for (const m of footstepMeshes) {
         (m.material as T.Material).dispose();
       }
@@ -973,13 +1092,8 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
     get starDomeMesh() { return starDomeMesh; },
     get connectionMesh() { return connMesh; },
     get footstepPool() { return footstepMeshes; },
-    get activeStarCount() {
-      let count = 0;
-      for (let i = 0; i < STAR_COUNT; i++) {
-        if (starActive[i]) count++;
-      }
-      return count;
-    },
+    get footstepBatchMesh() { return footstepBatchMesh; },
+    get activeStarCount() { return activeStarCount; },
     get ribbonHead() { return angelRibbonState.head; },
     get ribbonActiveCount() { return angelRibbonState.activeCount; },
   };

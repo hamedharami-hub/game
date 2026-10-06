@@ -105,6 +105,134 @@ export interface ObstacleCircle {
   radius: number;
 }
 
+export interface PlacementPoint {
+  x: number;
+  z: number;
+}
+
+/** Circular playable area. Its center may be offset from the world origin. */
+export interface PlacementLand extends ObstacleCircle {}
+
+function finitePoint(point: PlacementPoint): PlacementPoint | null {
+  return Number.isFinite(point?.x) && Number.isFinite(point?.z)
+    ? { x: point.x, z: point.z }
+    : null;
+}
+
+function nonNegativeFinite(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? Math.max(0, value) : fallback;
+}
+
+/**
+ * Clamp a world-space point into the usable disc, keeping the whole object's
+ * circular footprint on the land. Invalid coordinates safely fall back to the
+ * land center; invalid land dimensions collapse to a point at that center.
+ */
+export function projectPointToLand(
+  point: PlacementPoint,
+  land: PlacementLand,
+  footprintRadius = 0,
+): PlacementPoint {
+  const centerX = Number.isFinite(land?.x) ? land.x : 0;
+  const centerZ = Number.isFinite(land?.z) ? land.z : 0;
+  const landRadius = Number.isFinite(land?.radius) ? Math.max(0, land.radius) : 0;
+  const footprint = nonNegativeFinite(footprintRadius);
+  const usableRadius = Math.max(0, landRadius - footprint);
+  const candidate = finitePoint(point) ?? { x: centerX, z: centerZ };
+  const dx = candidate.x - centerX;
+  const dz = candidate.z - centerZ;
+  const distance = Math.hypot(dx, dz);
+
+  if (!Number.isFinite(distance) || distance <= usableRadius || distance === 0) {
+    return distance === 0 || !Number.isFinite(distance)
+      ? { x: centerX, z: centerZ }
+      : candidate;
+  }
+
+  const scale = usableRadius / distance;
+  return { x: centerX + dx * scale, z: centerZ + dz * scale };
+}
+
+/** Snap a point to a square grid; a zero/invalid grid size preserves free placement. */
+export function snapPointToGrid(point: PlacementPoint, gridSize = 0.5): PlacementPoint {
+  const candidate = finitePoint(point) ?? { x: 0, z: 0 };
+  if (!Number.isFinite(gridSize) || gridSize <= 0) return candidate;
+  const snapped = {
+    x: Math.round(candidate.x / gridSize) * gridSize,
+    z: Math.round(candidate.z / gridSize) * gridSize,
+  };
+  return finitePoint(snapped) ?? candidate;
+}
+
+/** Project, optionally snap, then re-project so snapping cannot cross the land edge. */
+export function projectAndSnapToLand(
+  point: PlacementPoint,
+  land: PlacementLand,
+  footprintRadius = 0,
+  gridSize = 0.5,
+): PlacementPoint {
+  const projected = projectPointToLand(point, land, footprintRadius);
+  return projectPointToLand(snapPointToGrid(projected, gridSize), land, footprintRadius);
+}
+
+/** Return whether the complete circular footprint fits inside the usable land disc. */
+export function isFootprintInsideLand(
+  point: PlacementPoint,
+  footprintRadius: number,
+  land: PlacementLand,
+): boolean {
+  const candidate = finitePoint(point);
+  if (!candidate || !Number.isFinite(land?.radius) || land.radius < 0) return false;
+  const centerX = Number.isFinite(land.x) ? land.x : 0;
+  const centerZ = Number.isFinite(land.z) ? land.z : 0;
+  const footprint = nonNegativeFinite(footprintRadius);
+  const usableRadius = land.radius - footprint;
+  if (usableRadius < 0) return false;
+  return Math.hypot(candidate.x - centerX, candidate.z - centerZ) <= usableRadius + 1e-9;
+}
+
+/** Advance or rewind an object's yaw by a fixed angle, wrapped to [-π, π). */
+export function stepPlacementRotation(
+  rotation: number,
+  direction: number,
+  step = Math.PI / 12,
+): number {
+  const current = Number.isFinite(rotation) ? rotation : 0;
+  const sign = Number.isFinite(direction) ? direction : 0;
+  const increment = Number.isFinite(step) && step > 0 ? step : Math.PI / 12;
+  const fullTurn = Math.PI * 2;
+  const wrapped = ((current + sign * increment + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+  return Number.isFinite(wrapped) ? wrapped : 0;
+}
+
+/** True when two circular footprints overlap (touching edges are allowed). */
+export function circlesOverlap(
+  first: ObstacleCircle,
+  second: ObstacleCircle,
+  clearance = 0,
+): boolean {
+  if (![first?.x, first?.z, first?.radius, second?.x, second?.z, second?.radius].every(Number.isFinite)) return false;
+  const gap = nonNegativeFinite(clearance);
+  const minimumDistance = Math.max(0, first.radius) + Math.max(0, second.radius) + gap;
+  return Math.hypot(first.x - second.x, first.z - second.z) < minimumDistance;
+}
+
+/** Check a candidate object's circular footprint against placed objects or terrain circles. */
+export function isPlacementClear(
+  point: PlacementPoint,
+  footprintRadius: number,
+  obstacles: readonly ObstacleCircle[],
+  clearance = 0,
+): boolean {
+  const candidate = finitePoint(point);
+  if (!candidate || !Array.isArray(obstacles)) return false;
+  const placedFootprint: ObstacleCircle = {
+    ...candidate,
+    radius: nonNegativeFinite(footprintRadius),
+  };
+  return !obstacles.some(obstacle => circlesOverlap(placedFootprint, obstacle, clearance));
+}
+
 /**
  * Adjusts soaring altitude dynamically with safe min/max boundary clamping.
  */
@@ -520,4 +648,3 @@ export function calculateEmbraceTransform(progress: number): {
     };
   }
 }
-

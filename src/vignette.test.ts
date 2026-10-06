@@ -24,6 +24,12 @@ test('triggerVignette activates state and selects valid adult asset', () => {
   assert.equal(v1.durationMs, 2000);
 });
 
+test('triggerVignette clamps invalid indices and durations to safe defaults', () => {
+  const v = triggerVignette(createVignetteState(), Number.POSITIVE_INFINITY, 1000, Number.NaN);
+  assert.equal(v.imageSrc, ADULT_VIGNETTE_ASSETS[0].image);
+  assert.equal(v.durationMs, 2400);
+});
+
 test('calculateVignetteOpacity follows smooth ease-in peak and ease-out', () => {
   const v = triggerVignette(createVignetteState(), 0, 1000, 2000);
   // At start
@@ -43,10 +49,13 @@ test('calculateVignetteOpacity follows smooth ease-in peak and ease-out', () => 
 test('updateVignetteState resets to inactive once duration expires', () => {
   let v = triggerVignette(createVignetteState(), 1, 1000, 1000);
   assert.equal(v.active, true);
+  const sameState = v;
   v = updateVignetteState(v, 1500);
+  assert.equal(v, sameState, 'active animation ticks update the state in place without frame allocations');
   assert.equal(v.active, true);
   assert.ok(v.opacity > 0);
   v = updateVignetteState(v, 2100);
+  assert.equal(v, sameState, 'completion also reuses the existing state object');
   assert.equal(v.active, false);
   assert.equal(v.opacity, 0);
 });

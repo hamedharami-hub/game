@@ -47,14 +47,15 @@ export function triggerVignette(
   now: number = performance.now(),
   durationMs: number = 2400,
 ): VignetteState {
-  const chosen = ADULT_VIGNETTE_ASSETS[Math.abs(assetIndex) % ADULT_VIGNETTE_ASSETS.length];
+  const safeAssetIndex = Number.isFinite(assetIndex) ? Math.abs(Math.trunc(assetIndex)) : 0;
+  const chosen = ADULT_VIGNETTE_ASSETS[safeAssetIndex % ADULT_VIGNETTE_ASSETS.length];
   return {
     active: true,
     opacity: 0.01,
     imageSrc: chosen.image,
     caption: chosen.caption,
     startedAt: now,
-    durationMs: Math.max(800, durationMs),
+    durationMs: Number.isFinite(durationMs) ? Math.max(800, durationMs) : 2400,
   };
 }
 
@@ -87,14 +88,10 @@ export function updateVignetteState(state: VignetteState, now: number): Vignette
   if (!state.active) return state;
   const opacity = calculateVignetteOpacity(state, now);
   if (opacity <= 0.001) {
-    return {
-      ...state,
-      active: false,
-      opacity: 0,
-    };
+    state.active = false;
+    state.opacity = 0;
+    return state;
   }
-  return {
-    ...state,
-    opacity,
-  };
+  state.opacity = opacity;
+  return state;
 }

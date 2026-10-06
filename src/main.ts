@@ -3,10 +3,15 @@ import './style.css';
 import { directionFrame } from './directions';
 import { createGarden } from './garden';
 import { sampleAmbience } from './ambience';
-import { initialState, decodeSave, storageKey, placeDecoration, decorationPosition, growthStage, regionSlots, furnishings, species, setAppearance, hairColors, outfits, type Furnishing, type HairColor, type Outfit, type District } from './state';
+import {
+  initialState, decodeSave, storageKey, growthStage, species, setAppearance, hairColors, outfits,
+  placeLandscapePlacement, moveLandscapePlacement, removeLandscapePlacement,
+  landscapeFootprintRadii, landscapeKinds, LANDSCAPE_PLACEMENT_CLEARANCE,
+  type LandscapeKind, type LandscapePlacement, type HairColor, type Outfit,
+} from './state';
 import type { State } from './state';
 import { lookAssets, diagonalAssets } from './appearance';
-import { createWorld, districts } from './world';
+import { createWorld } from './world';
 import { createAudioEngine, type AudioEngine } from './audio';
 import { createVisualFXSystem, computeNightIntensity, calculateShadowParams, type VisualFXSystem } from './particles';
 import {
@@ -21,6 +26,10 @@ import {
   planetElevation,
   adjustFlightAltitude,
   resolveObstacleCollision,
+  projectAndSnapToLand,
+  stepPlacementRotation,
+  isPlacementClear,
+  type ObstacleCircle,
   MIN_FLIGHT_ALTITUDE,
   MAX_FLIGHT_ALTITUDE,
   type FlightState,
@@ -44,17 +53,48 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
   <div id="world" aria-label="سرزمین زندهٔ دوشاخ‌ها"></div>
   <header class="hud">
     <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>سرزمین دوشاخ‌ها<small>خانهٔ زندهٔ ما</small></span></div>
-    <nav class="action-bar" aria-label="کارهای باغ">
-      <button id="plant-action" class="glass" aria-label="کاشت گل">کاشت</button>
-      <button id="build-action" class="glass" aria-label="چیدمان باغ">چیدمان</button>
+  <nav class="action-bar" aria-label="کارهای دشت">
+    <button id="plant-action" class="glass" aria-label="کاشت گل">کاشت</button>
+      <button id="build-action" class="glass" aria-label="ساخت‌وساز آزاد" aria-pressed="false">ساخت آزاد</button>
       <button id="people-action" class="glass" aria-label="دیدار با همراهان">همراه‌ها</button>
-      <button id="flight-toggle-btn" class="glass" aria-pressed="false" aria-label="پرواز دونفره">پرواز</button>
       <button id="flight-ascend-btn" class="glass flight-altitude-btn" aria-label="افزایش ارتفاع پرواز" hidden>▲ اوج</button>
       <button id="flight-descend-btn" class="glass flight-altitude-btn" aria-label="کاهش ارتفاع پرواز" hidden>▼ فرود</button>
-      <button id="world-map-action" class="glass" aria-label="نقشهٔ سیاره">سیاره 🧭</button>
       <button id="camera-view" class="glass" aria-pressed="false" aria-label="تغییر نمای دوربین">نمای باز</button>
     </nav>
   </header>
+  <section id="build-palette" class="build-palette glass" role="region" aria-labelledby="build-palette-title" hidden>
+    <div class="build-palette__heading">
+      <h2 id="build-palette-title">ساخت در سراسر دشت</h2>
+      <button id="finish-building" class="object-control" aria-label="پایان ساخت‌وساز">پایان</button>
+    </div>
+    <p class="build-palette__hint">گل‌های این فهرست تزئینی‌اند؛ گل‌های کاشتنی در باغچه می‌رویند. روی چمن بزن یا با جهت‌ها جابه‌جا کن؛ R بچرخان و Enter ثبت کن.</p>
+    <label class="build-object-picker" for="landscape-object-select">
+      <span>انتخاب سازه برای ویرایش</span>
+      <select id="landscape-object-select" aria-describedby="placement-status">
+        <option value="">سازه‌ای را انتخاب کن</option>
+        <option value="main-garden">باغچهٔ اصلی</option>
+      </select>
+    </label>
+    <div id="build-tools" class="build-palette__tools" role="group" aria-label="چیزهایی برای ساخت">
+      <button class="build-tool" data-kind="tree" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">♧</span>درخت باغی</button>
+      <button class="build-tool" data-kind="spirit-tree" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">✧</span>درخت روح</button>
+      <button class="build-tool" data-kind="flower" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">✿</span>یک گل تزئینی</button>
+      <button class="build-tool" data-kind="flower-clump" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">❀</span>گروه گل تزئینی</button>
+      <button class="build-tool" data-kind="garden-bed" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">▦</span>باغچهٔ زندهٔ فعلی</button>
+      <button class="build-tool" data-kind="cottage" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">⌂</span>خانهٔ باغی</button>
+      <button class="build-tool" data-kind="cabin" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">⌂</span>کلبهٔ روستایی</button>
+      <button class="build-tool" data-kind="gazebo" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">⌑</span>آلاچیق</button>
+      <button class="build-tool" data-kind="wooden-bridge" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">⌁</span>پل چوبی</button>
+      <button class="build-tool" data-kind="well" aria-pressed="false"><span class="build-tool__icon" aria-hidden="true">◉</span>چاه سنگی</button>
+    </div>
+    <p id="placement-status" class="build-palette__status" data-placement-state="idle" role="status" aria-live="polite">یک چیز را انتخاب کن تا پیش‌نمایش جای آن را ببینی.</p>
+    <div class="object-controls">
+      <button id="rotate-landscape-left" class="object-control" aria-label="چرخش ۱۵ درجه به چپ">↺ ۱۵°</button>
+      <button id="rotate-landscape-right" class="object-control" aria-label="چرخش ۱۵ درجه به راست">↻ ۱۵°</button>
+      <button id="remove-landscape" class="object-control object-control--remove" data-action="remove" aria-label="برداشتن سازهٔ انتخاب‌شده" disabled>برداشتن</button>
+    </div>
+  </section>
+  <div id="placement-preview" class="placement-preview" data-placement-state="invalid" aria-hidden="true" hidden></div>
   <footer class="world-footer">
     <span id="ambient-status" role="status" aria-live="polite">باغ آمادهٔ کاشت و چیدمان است.</span>
     <button id="interact" class="primary" aria-label="صحبت با گوراستاخ" title="صحبت با گوراستاخ" disabled>سلام</button>
@@ -79,7 +119,10 @@ try {
 
 const status = $('ambient-status');
 const overlay = $('overlay');
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const buildPalette = $('build-palette');
+const placementStatus = $('placement-status');
+const placementMarker = $('placement-preview');
+let reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const keys = new Set<string>();
 let target: T.Vector3 | null = null;
 let nearestCompanion = false;
@@ -174,7 +217,7 @@ function noticeFreshBlooms(now: number) {
     observedPlantStages.set(plant.id, stage);
     if (previous !== undefined && previous < 3 && stage === 3) {
       audioEngine.playBloomChime();
-      const flower = new T.Vector3(-2 + plant.col - 3.5, 0, 14 + plant.row - 3.5);
+      const flower = plantWorldPosition(plant);
       queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار شکوفهٔ تازه مکث کرد.', 1.2);
     }
   }
@@ -244,6 +287,7 @@ renderer.toneMapping = T.ACESFilmicToneMapping;
 renderer.toneMappingExposure = .96;
 $('world').append(renderer.domElement);
 renderer.domElement.setAttribute('aria-label', 'برای قدم‌زدن روی زمین کلیک کن؛ حرکت با کلیدهای جهت‌دار هم کار می‌کند.');
+renderer.domElement.tabIndex = 0;
 const skyLight = new T.HemisphereLight(0xfff3d7, 0x52785d, 1.65);
 scene.add(skyLight);
 const sun = new T.DirectionalLight(0xffe1a8, 2.35);
@@ -452,6 +496,7 @@ scene.add(gor);
 const fx = createVisualFXSystem(scene, { camera, reducedMotion });
 if (typeof window !== 'undefined' && window.matchMedia) {
   window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => {
+    reducedMotion = event.matches;
     fx.setReducedMotion?.(event.matches);
   });
 }
@@ -503,7 +548,7 @@ const ownGarden = createGarden(
       gor.userData.emoteUntil = performance.now() + 1000;
       gor.userData.emoteKind = 'wave';
       setStatus(`${species[newPlant.species].name} کاشته شد.`);
-      const flower = new T.Vector3(-2 + newPlant.col - 3.5, 0, 14 + newPlant.row - 3.5);
+      const flower = plantWorldPosition(newPlant);
       queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار گل تازه مکث کرد.', 1.2);
     } else if (next.essence > previous.essence) setStatus('گل برداشت شد.');
   },
@@ -511,41 +556,241 @@ const ownGarden = createGarden(
   () => { keys.clear(); },
   () => { ownGarden.close(); openBuild(); },
 );
-function buildDialog() {
-  const kinds = Object.keys(furnishings) as Furnishing[];
-  const choices = kinds.map(kind => `<button data-furnishing="${kind}" aria-label="ساخت ${furnishings[kind].name}">${furnishings[kind].name}</button>`).join('');
-  dialog('چیدمان باغ', '', choices, $('build-action'));
-  for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-furnishing]')) {
-    button.onclick = () => {
-      const kind = button.dataset.furnishing as Furnishing;
-      const occupied = new Set(state.decorations.filter(item => item.district === 'garden').map(item => item.slot));
-      const slot = Array.from({ length: regionSlots(state.regionLevels.garden) }, (_, index) => index).find(index => !occupied.has(index));
-      if (slot === undefined) { setStatus('باغ جا برای سازهٔ تازه ندارد.'); return; }
-      const next = placeDecoration(state, 'garden', slot, kind);
-      if (next === state) { setStatus('سازه هنوز آمادهٔ ساخت نیست.'); return; }
-      state = next;
-      save();
-      setStatus(`${furnishings[kind].name} به باغ اضافه شد.`);
-      const local = decorationPosition('garden', slot, state.worldSeed);
-      const focus = new T.Vector3(-2 + local.x * .43, 0, 14 + local.z * .43);
-      const standOff = kind === 'pavilion' ? 3 : kind === 'arbor' ? 2 : 1.7;
-      queueCompanionMoment(
-        'decoration',
-        focus,
-        kind === 'pavilion' || kind === 'arbor' ? 'sit' : 'wave',
-        kind === 'pavilion' || kind === 'arbor' ? 'گوراستاخ کنار سازه کمی استراحت کرد.' : 'گوراستاخ برای دیدن سازه نزدیک شد.',
-        standOff,
-      );
-      buildDialog();
-    };
+let building = false;
+let buildKind: LandscapeKind | null = null;
+let selectedLandscapeId: string | null = null;
+let buildRotation = 0;
+let placementCandidate: { x: number; z: number; kind: LandscapeKind; rotation: number; valid: boolean } | null = null;
+let placementSequence = 0;
+const gardenPlacementId = 'main-garden';
+const defaultGardenPosition = { x: -2, z: 14, rotation: 0 };
+const landscapeKindNames: Record<LandscapeKind, string> = {
+  tree: 'درخت باغی',
+  'spirit-tree': 'درخت روح',
+  flower: 'گل تزئینی',
+  'flower-clump': 'گروه گل تزئینی',
+  'garden-bed': 'باغچهٔ اصلی',
+  cottage: 'خانهٔ باغی',
+  cabin: 'کلبهٔ روستایی',
+  gazebo: 'آلاچیق',
+  'wooden-bridge': 'پل چوبی',
+  well: 'چاه سنگی',
+};
+
+function plantWorldPosition(plant: { col: number; row: number }): T.Vector3 {
+  ownGarden.root.updateMatrixWorld(true);
+  const point = ownGarden.root.localToWorld(new T.Vector3(plant.col - 3.5, 0, plant.row - 3.5));
+  point.y = planetElevation(point.x, point.z);
+  return point;
+}
+
+function syncGardenTransform() {
+  const saved = state.landscapePlacements.find(placement => placement.id === gardenPlacementId);
+  const transform = saved ?? defaultGardenPosition;
+  const root = ownGarden.root;
+  if (Math.abs(root.position.x - transform.x) < 1e-4
+    && Math.abs(root.position.z - transform.z) < 1e-4
+    && Math.abs(root.rotation.y - transform.rotation) < 1e-4) return;
+  ownGarden.setTransform(transform.x, transform.z, transform.rotation);
+}
+
+function selectedPlacement(): LandscapePlacement | null {
+  if (!selectedLandscapeId) return null;
+  const saved = state.landscapePlacements.find(placement => placement.id === selectedLandscapeId);
+  if (saved) return saved;
+  if (selectedLandscapeId !== gardenPlacementId) return null;
+  return {
+    id: gardenPlacementId,
+    kind: 'garden-bed',
+    x: ownGarden.root.position.x,
+    z: ownGarden.root.position.z,
+    rotation: ownGarden.root.rotation.y,
+  };
+}
+
+function activePlacementSpec(): LandscapePlacement | null {
+  const selected = selectedPlacement();
+  if (selected) return { ...selected, rotation: buildRotation };
+  if (!buildKind) return null;
+  const id = buildKind === 'garden-bed' ? gardenPlacementId : `preview-${buildKind}`;
+  return { id, kind: buildKind, x: 0, z: 0, rotation: buildRotation };
+}
+
+function setPlacementMessage(message: string, stateName: 'idle' | 'valid' | 'invalid' | 'blocked' = 'idle') {
+  placementStatus.textContent = message;
+  placementStatus.dataset.placementState = stateName;
+  gameRoot.dataset.placementState = stateName;
+}
+
+function setBuilding(active: boolean) {
+  building = active;
+  gameRoot.classList.toggle('building', active);
+  buildPalette.hidden = !active;
+  $('build-action').setAttribute('aria-pressed', String(active));
+  $('build-action').textContent = active ? 'بستن ساخت' : 'ساخت آزاد';
+  renderer.domElement.setAttribute('aria-label', active
+    ? 'حالت ساخت آزاد. کلیدهای جهت‌دار جای سازه را جابه‌جا می‌کنند، R آن را می‌چرخاند، Enter ثبت می‌کند و Delete آن را برمی‌دارد.'
+    : 'برای قدم‌زدن روی زمین کلیک کن؛ حرکت با کلیدهای جهت‌دار هم کار می‌کند.');
+  if (!active) {
+    buildKind = null;
+    selectedLandscapeId = null;
+    placementCandidate = null;
+    placementMarker.hidden = true;
+    delete gameRoot.dataset.placementState;
+    districtWorld.setLandscapePreview(null);
+    syncBuildControls();
+    $('build-action').focus({ preventScroll: true });
   }
 }
+
+function syncBuildControls() {
+  for (const button of buildPalette.querySelectorAll<HTMLButtonElement>('[data-kind]')) {
+    const kind = button.dataset.kind as LandscapeKind;
+    button.setAttribute('aria-pressed', String(kind === buildKind || (kind === 'garden-bed' && selectedLandscapeId === gardenPlacementId)));
+  }
+  const objectSelect = $<HTMLSelectElement>('landscape-object-select');
+  const selectedId = selectedLandscapeId;
+  const placements = state.landscapePlacements.filter(placement => placement.id !== gardenPlacementId);
+  const fragment = document.createDocumentFragment();
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'سازه‌ای را انتخاب کن';
+  fragment.append(placeholder);
+  const gardenOption = document.createElement('option');
+  gardenOption.value = gardenPlacementId;
+  gardenOption.textContent = 'باغچهٔ اصلی';
+  fragment.append(gardenOption);
+  const kindCounts = new Map<LandscapeKind, number>();
+  for (const placement of placements) {
+    const index = (kindCounts.get(placement.kind) ?? 0) + 1;
+    kindCounts.set(placement.kind, index);
+    const option = document.createElement('option');
+    option.value = placement.id;
+    option.textContent = `${landscapeKindNames[placement.kind]} ${new Intl.NumberFormat('fa-IR').format(index)}`;
+    fragment.append(option);
+  }
+  objectSelect.replaceChildren(fragment);
+  objectSelect.disabled = false; // The movable main garden is always available.
+  objectSelect.value = selectedId && (selectedId === gardenPlacementId || placements.some(item => item.id === selectedId))
+    ? selectedId
+    : '';
+
+  const selected = selectedPlacement();
+  const controls = buildPalette.querySelector<HTMLElement>('.object-controls');
+  if (controls) controls.hidden = !selected && !buildKind;
+  const removeButton = $<HTMLButtonElement>('remove-landscape');
+  removeButton.disabled = !selected || selected.id === gardenPlacementId;
+}
+
+$<HTMLSelectElement>('landscape-object-select').addEventListener('change', event => {
+  const select = event.currentTarget as HTMLSelectElement;
+  if (select.value) {
+    selectLandscapePlacement(select.value);
+    renderer.domElement.focus({ preventScroll: true });
+    return;
+  }
+  selectedLandscapeId = null;
+  buildKind = null;
+  placementCandidate = null;
+  placementMarker.hidden = true;
+  districtWorld.setLandscapePreview(null);
+  setPlacementMessage('یک سازه را از فهرست یا خود دشت برگزین.', 'idle');
+  syncBuildControls();
+});
+
+function setBuildKind(kind: LandscapeKind) {
+  const existing = kind === 'garden-bed'
+    ? state.landscapePlacements.find(placement => placement.id === gardenPlacementId)
+    : undefined;
+  if (kind === 'garden-bed') {
+    if (selectedLandscapeId === gardenPlacementId) {
+      selectedLandscapeId = null;
+      buildKind = null;
+    } else {
+      selectedLandscapeId = gardenPlacementId;
+      buildKind = null;
+      buildRotation = existing?.rotation ?? ownGarden.root.rotation.y;
+    }
+    setPlacementMessage('باغچهٔ زندهٔ فعلی را جابه‌جا کن؛ گل‌ها و زمان رشدشان می‌مانند. باغچهٔ تازه‌ای ساخته نمی‌شود.', 'idle');
+  } else {
+    selectedLandscapeId = null;
+    buildKind = buildKind === kind ? null : kind;
+    buildRotation = 0;
+    setPlacementMessage(buildKind ? 'پیش‌نمایش را روی چمن حرکت بده؛ با یک ضربه یا کلید Enter بساز.' : 'روی سازه‌ای از خودت بزن تا جابه‌جایش کنی.', 'idle');
+  }
+  placementCandidate = null;
+  districtWorld.setLandscapePreview(null);
+  placementMarker.hidden = true;
+  syncBuildControls();
+  const selected = selectedPlacement();
+  const start = selected ? { x: selected.x, z: selected.z } : { x: angel.position.x, z: angel.position.z };
+  if (activePlacementSpec()) updatePlacementPreviewAt(start);
+}
+
+for (const button of buildPalette.querySelectorAll<HTMLButtonElement>('[data-kind]')) {
+  button.addEventListener('click', event => {
+    const kind = button.dataset.kind;
+    if (kind && landscapeKinds.includes(kind as LandscapeKind)) {
+      setBuildKind(kind as LandscapeKind);
+      // Keyboard users move from the chosen tool into the world, where the
+      // arrow keys and Enter control the placement preview.
+      if (event.detail === 0) renderer.domElement.focus({ preventScroll: true });
+    }
+  });
+}
+
 function openBuild() {
   cancelCompanionMoments();
-  activeDialogReturn = $('build-action');
-  buildDialog();
+  markPlayerActive();
+  target = null;
+  keys.clear();
+  if (overlay.hidden === false) closeDialog();
+  if (ownGarden.editing) ownGarden.close();
+  if (flightState !== 'grounded') toggleFlight(false);
+  setBuilding(true);
+  syncBuildControls();
+  buildPalette.querySelector<HTMLButtonElement>('[data-kind]')?.focus({ preventScroll: true });
+  setPlacementMessage('یک چیز را برگزین؛ بعد روی چمن جای دلخواه بگذار.', 'idle');
 }
-$('build-action').onclick = openBuild;
+
+$('finish-building').onclick = () => setBuilding(false);
+$('rotate-landscape-left').onclick = () => rotatePlacement(-1);
+$('rotate-landscape-right').onclick = () => rotatePlacement(1);
+$('remove-landscape').onclick = () => removeSelectedPlacement();
+
+function rotatePlacement(direction: number) {
+  if (!activePlacementSpec()) return;
+  buildRotation = stepPlacementRotation(buildRotation, direction);
+  const selected = selectedPlacement();
+  if (selected && selected.id !== gardenPlacementId) {
+    state = moveLandscapePlacement(state, selected.id, selected.x, selected.z, buildRotation);
+    save();
+    setPlacementMessage('سازه چرخید؛ می‌توانی جای تازه‌ای هم برایش انتخاب کنی.');
+  } else {
+    setPlacementMessage('چرخش پیش‌نمایش آماده است؛ روی چمن بزن تا جایش ثبت شود.');
+  }
+  syncBuildControls();
+  if (placementCandidate) updatePlacementPreviewAt(placementCandidate);
+}
+
+function removeSelectedPlacement() {
+  if (!selectedLandscapeId || selectedLandscapeId === gardenPlacementId) return;
+  state = removeLandscapePlacement(state, selectedLandscapeId);
+  selectedLandscapeId = null;
+  save();
+  districtWorld.setLandscapePreview(null);
+  placementMarker.hidden = true;
+  setPlacementMessage('سازه از دشت برداشته شد. هر وقت خواستی دوباره بسازش.');
+  syncBuildControls();
+}
+
+$('build-action').addEventListener('click', () => {
+  if (building) {
+    setBuilding(false);
+    return;
+  }
+  openBuild();
+});
 
 // ============================================================================
 // Couple Traversal & Flight Mechanics State
@@ -848,78 +1093,11 @@ function appearanceDialog() {
     };
   }
 }
-function openPlanetaryMap(returnFocus: HTMLElement = $('world-map-action')) {
-  cancelCompanionMoments();
-  markPlayerActive();
-  const districtList = (Object.entries(districts) as [District, typeof districts[District]][]).map(([id, d]) => {
-    return `<button class="district-btn" data-district="${id}" style="border-right: 4px solid ${d.color}; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; margin: 8px 0; width: 100%; border-radius: 8px; background: rgba(255,255,255,0.85); cursor: pointer; text-align: right; border: 1px solid rgba(0,0,0,0.08); font-family: inherit;">
-      <div>
-        <div style="font-weight: 700; font-size: 1.05rem; color: #1e3328;">${d.icon} ${d.name}</div>
-        <div style="font-size: 0.82rem; color: #4a6358;">${d.subtitle}</div>
-      </div>
-      <span style="font-size: 0.85rem; color: #2e6b52; font-weight: 600;">پرواز به اینجا ✦</span>
-    </button>`;
-  }).join('');
-
-  dialog(
-    'سفر در سیارهٔ دوشاخ‌ها',
-    `<p style="margin-bottom: 12px; font-size: 0.9rem; opacity: 0.9;">مکان مورد نظر برای پرواز و گردش دونفره را انتخاب کنید:</p><div class="districts-grid">${districtList}</div>`,
-    '',
-    returnFocus,
-  );
-
-  for (const btn of overlay.querySelectorAll<HTMLButtonElement>('[data-district]')) {
-    btn.onclick = () => {
-      const id = btn.dataset.district as District;
-      closeDialog();
-      fastTravelToDistrict(id);
-    };
-  }
-}
-
-function fastTravelToDistrict(id: District) {
-  const d = districts[id];
-  if (!d) return;
-  cancelCompanionMoments();
-  markPlayerActive();
-
-  audioEngine.playBloomChime();
-
-  const flash = document.createElement('div');
-  flash.style.position = 'fixed';
-  flash.style.inset = '0';
-  flash.style.background = 'radial-gradient(circle, rgba(255,255,255,0.88) 0%, rgba(200,240,230,0.65) 60%, transparent 100%)';
-  flash.style.opacity = '0';
-  flash.style.transition = 'opacity 0.35s ease';
-  flash.style.pointerEvents = 'none';
-  flash.style.zIndex = '999';
-  document.body.appendChild(flash);
-
-  requestAnimationFrame(() => {
-    flash.style.opacity = '1';
-    setTimeout(() => {
-      const elev = planetElevation(d.x, d.z);
-      angel.position.set(d.x, elev, d.z);
-      gor.position.set(d.x + 1.2, elev, d.z + 0.3);
-      target = null;
-      cameraFocus.set(d.x, elev, d.z);
-      districtWorld.activate(id);
-      setStatus(`دست در دست هم با نوری آرام به «${d.name}» رسیدید.`);
-
-      flash.style.opacity = '0';
-      setTimeout(() => flash.remove(), 400);
-    }, 350);
-  });
-}
-
-$('world-map-action').onclick = () => openPlanetaryMap($('world-map-action'));
 renderer.domElement.addEventListener('contextmenu', event => {
   event.preventDefault();
-  openPlanetaryMap();
 });
 
-$('people-action').onclick = () => peopleDialog($('people-action'));
-$('flight-toggle-btn').onclick = () => toggleFlight();
+$('people-action').onclick = () => { if (building) setBuilding(false); peopleDialog($('people-action')); };
 $('flight-ascend-btn').onclick = () => {
   if (flightState === 'grounded') return;
   targetAltitude = adjustFlightAltitude(targetAltitude, 1.5);
@@ -930,7 +1108,7 @@ $('flight-descend-btn').onclick = () => {
   targetAltitude = adjustFlightAltitude(targetAltitude, -1.5);
   setStatus(`ارتفاع پرواز: ${targetAltitude.toFixed(1)} متر`);
 };
-$('plant-action').onclick = () => { cancelCompanionMoments(); closeDialog(); if (flightState !== 'grounded') toggleFlight(false); ownGarden.open(); };
+$('plant-action').onclick = () => { if (building) setBuilding(false); cancelCompanionMoments(); closeDialog(); if (flightState !== 'grounded') toggleFlight(false); ownGarden.open(); };
 $('interact').onclick = () => { if (nearestCompanion) peopleDialog($('interact')); };
 $('camera-view').onclick = () => {
   wideView = !wideView;
@@ -942,6 +1120,147 @@ $('camera-view').onclick = () => {
 const raycaster = new T.Raycaster();
 const pointer = new T.Vector2();
 let pointerStart = { x: 0, y: 0 };
+
+function placementBlockers(exceptId: string | null, kind: LandscapeKind): ObstacleCircle[] {
+  const dynamic = new Set<ObstacleCircle>(districtWorld.landscapeObstacles);
+  const waterways = new Set<ObstacleCircle>(districtWorld.waterwayObstacles);
+  const fixed = districtWorld.obstacles.filter(obstacle => !dynamic.has(obstacle)
+    && !(kind === 'wooden-bridge' && waterways.has(obstacle)));
+  const saved = [...state.landscapePlacements];
+  if (!saved.some(placement => placement.id === gardenPlacementId)) {
+    saved.push({ id: gardenPlacementId, kind: 'garden-bed', ...defaultGardenPosition });
+  }
+  const footprints = saved
+    .filter(placement => placement.id !== exceptId)
+    .map(placement => ({
+      x: placement.x,
+      z: placement.z,
+      radius: landscapeFootprintRadii[placement.kind],
+    }));
+  return [...fixed, ...footprints];
+}
+
+function updatePlacementPreviewAt(point: { x: number; z: number }) {
+  const spec = activePlacementSpec();
+  if (!building || !spec) {
+    placementCandidate = null;
+    placementMarker.hidden = true;
+    districtWorld.setLandscapePreview(null);
+    return;
+  }
+
+  const bounds = worldBounds();
+  const radius = landscapeFootprintRadii[spec.kind];
+  const candidate = projectAndSnapToLand(
+    point,
+    { x: bounds.x, z: bounds.z, radius: bounds.r },
+    radius,
+    0.25,
+  );
+  const valid = isPlacementClear(candidate, radius, placementBlockers(spec.id, spec.kind), LANDSCAPE_PLACEMENT_CLEARANCE);
+  placementCandidate = { ...candidate, kind: spec.kind, rotation: buildRotation, valid };
+  districtWorld.setLandscapePreview({ ...spec, ...candidate, rotation: buildRotation }, valid);
+  setPlacementMessage(
+    valid ? 'جای این سازه آماده است؛ برای گذاشتنش روی زمین بزن یا Enter را بزن.' : 'این نقطه به آب یا سازه‌ای نزدیک است؛ کمی جابه‌جایش کن.',
+    valid ? 'valid' : 'blocked',
+  );
+
+  camera.updateMatrixWorld();
+  const center = new T.Vector3(candidate.x, planetElevation(candidate.x, candidate.z) + 0.08, candidate.z).project(camera);
+  const edge = new T.Vector3(candidate.x + radius, planetElevation(candidate.x + radius, candidate.z) + 0.08, candidate.z).project(camera);
+  const rect = renderer.domElement.getBoundingClientRect();
+  const screenX = rect.left + (center.x * 0.5 + 0.5) * rect.width;
+  const screenY = rect.top + (-center.y * 0.5 + 0.5) * rect.height;
+  const edgeX = rect.left + (edge.x * 0.5 + 0.5) * rect.width;
+  const edgeY = rect.top + (-edge.y * 0.5 + 0.5) * rect.height;
+  const markerSize = Math.max(40, Math.hypot(edgeX - screenX, edgeY - screenY) * 2);
+  placementMarker.style.left = `${screenX}px`;
+  placementMarker.style.top = `${screenY}px`;
+  placementMarker.style.width = `${markerSize}px`;
+  placementMarker.style.height = `${markerSize}px`;
+  placementMarker.dataset.placementState = valid ? 'valid' : 'invalid';
+  placementMarker.hidden = center.z < -1 || center.z > 1;
+}
+
+function updatePlacementPreviewFromEvent(event: PointerEvent) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObject(districtWorld.ground, false)[0];
+  if (!hit) {
+    placementCandidate = null;
+    placementMarker.hidden = true;
+    districtWorld.setLandscapePreview(null);
+    setPlacementMessage('روی چمن پیوسته حرکت کن تا جای سازه را انتخاب کنی.', 'invalid');
+    return;
+  }
+  updatePlacementPreviewAt(hit.point);
+}
+
+function makeLandscapeId(): string {
+  placementSequence = (placementSequence + 1) % 1_000_000;
+  return `land-${Date.now().toString(36)}-${placementSequence.toString(36)}`;
+}
+
+function selectLandscapePlacement(id: string) {
+  selectedLandscapeId = id;
+  buildKind = null;
+  const selected = selectedPlacement();
+  buildRotation = selected?.rotation ?? 0;
+  syncBuildControls();
+  setPlacementMessage(selected?.kind === 'garden-bed'
+    ? 'باغچهٔ اصلی انتخاب شد؛ با زدن روی چمن جابه‌جایش کن.'
+    : 'سازه انتخاب شد؛ جای تازه، چرخش یا برداشتن را انجام بده.');
+  if (selected) updatePlacementPreviewAt(selected);
+}
+
+function commitLandscapeAtCandidate() {
+  const candidate = placementCandidate;
+  const spec = activePlacementSpec();
+  if (!candidate || !candidate.valid || !spec) {
+    setPlacementMessage('این نقطه جا ندارد؛ پیش‌نمایش را به جای سبز دیگری ببر.', 'blocked');
+    return;
+  }
+
+  let next: State;
+  if (selectedLandscapeId) {
+    if (selectedLandscapeId === gardenPlacementId) {
+      const existing = state.landscapePlacements.some(placement => placement.id === gardenPlacementId);
+      next = existing
+        ? moveLandscapePlacement(state, gardenPlacementId, candidate.x, candidate.z, candidate.rotation)
+        : placeLandscapePlacement(state, {
+          id: gardenPlacementId, kind: 'garden-bed', x: candidate.x, z: candidate.z, rotation: candidate.rotation,
+        });
+    } else {
+      next = moveLandscapePlacement(state, selectedLandscapeId, candidate.x, candidate.z, candidate.rotation);
+    }
+    if (next === state) {
+      setPlacementMessage('جای تازه برای این سازه مناسب نیست.', 'blocked');
+      return;
+    }
+    state = next;
+    save();
+    setPlacementMessage(spec.kind === 'garden-bed'
+      ? 'باغچه جابه‌جا شد؛ گل‌ها و رشدشان حفظ شدند.'
+      : 'سازه جابه‌جا شد و جای تازه‌اش ذخیره شد.');
+  } else if (buildKind) {
+    next = placeLandscapePlacement(state, {
+      id: makeLandscapeId(), kind: buildKind, x: candidate.x, z: candidate.z, rotation: candidate.rotation,
+    });
+    if (next === state) {
+      setPlacementMessage('سازه در این نقطه ثبت نشد؛ جای دیگری را امتحان کن.', 'blocked');
+      return;
+    }
+    state = next;
+    save();
+    setPlacementMessage('به دشت اضافه شد؛ می‌توانی مورد بعدی را هم آزادانه بچینی.');
+  }
+  syncBuildControls();
+}
+
+renderer.domElement.addEventListener('pointermove', event => {
+  if (building) updatePlacementPreviewFromEvent(event);
+});
 renderer.domElement.addEventListener('pointerdown', event => {
   markPlayerActive();
   pointerStart = { x: event.clientX, y: event.clientY };
@@ -952,6 +1271,29 @@ renderer.domElement.addEventListener('pointerup', event => {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
+  const groundHit = raycaster.intersectObject(districtWorld.ground)[0];
+  if (building) {
+    const pickedId = districtWorld.pickLandscape(raycaster);
+    if (pickedId && pickedId !== selectedLandscapeId) {
+      selectLandscapePlacement(pickedId);
+      if (groundHit) updatePlacementPreviewAt(groundHit.point);
+      return;
+    }
+    if (buildKind) {
+      if (!groundHit) return;
+      updatePlacementPreviewAt(groundHit.point);
+      commitLandscapeAtCandidate();
+      return;
+    }
+
+    if (activePlacementSpec() && groundHit) {
+      updatePlacementPreviewAt(groundHit.point);
+      commitLandscapeAtCandidate();
+      return;
+    }
+    setPlacementMessage('یک سازه را از فهرست انتخاب کن یا روی یکی از سازه‌های خودت بزن.', 'idle');
+    return;
+  }
   if (ownGarden.editing) { ownGarden.hit(raycaster); return; }
   if (ownGarden.owns(raycaster)) { ownGarden.open(); ownGarden.hit(raycaster); return; }
   if (raycaster.intersectObject(gor, true).length) {
@@ -961,7 +1303,7 @@ renderer.domElement.addEventListener('pointerup', event => {
     else setStatus('گوراستاخ کمی دورتر است؛ با حرکت به او نزدیک شو.');
     return;
   }
-  const hit = raycaster.intersectObject(districtWorld.ground)[0];
+  const hit = groundHit;
   if (!hit) return;
   cancelCompanionMoments();
   markPlayerActive();
@@ -984,6 +1326,46 @@ window.addEventListener('keydown', event => {
     return;
   }
   const key = event.key.toLowerCase();
+  if (building) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setBuilding(false);
+      return;
+    }
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest('input, select, textarea, [contenteditable="true"]')) return;
+    // Enter on any palette button must remain the browser's native activation
+    // key; Enter commits only while the world or page itself has focus.
+    if (event.key === 'Enter' && target?.closest('button')) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
+      const base = placementCandidate ?? selectedPlacement() ?? { x: angel.position.x, z: angel.position.z };
+      const step = event.shiftKey ? 2 : 0.5;
+      const next = { x: base.x, z: base.z };
+      if (event.key === 'ArrowUp' || key === 'w') next.z -= step;
+      if (event.key === 'ArrowDown' || key === 's') next.z += step;
+      if (event.key === 'ArrowLeft' || key === 'a') next.x -= step;
+      if (event.key === 'ArrowRight' || key === 'd') next.x += step;
+      event.preventDefault();
+      if (activePlacementSpec()) updatePlacementPreviewAt(next);
+      return;
+    }
+    if (event.code === 'KeyR' || key === 'r') {
+      event.preventDefault();
+      rotatePlacement(1);
+      return;
+    }
+    if ((event.key === 'Backspace' || event.key === 'Delete') && selectedLandscapeId) {
+      event.preventDefault();
+      removeSelectedPlacement();
+      return;
+    }
+    if (event.key === 'Enter' && activePlacementSpec() && placementCandidate) {
+      event.preventDefault();
+      commitLandscapeAtCandidate();
+      return;
+    }
+    return;
+  }
   if (key === 'f') {
     event.preventDefault();
     toggleFlight();
@@ -1045,8 +1427,8 @@ function animate() {
   fx.setNightIntensity(computeNightIntensity(atmosphere.phase, atmosphere.phaseProgress));
   if (gameRoot.dataset.phase !== atmosphere.phase) gameRoot.dataset.phase = atmosphere.phase;
   if (gameRoot.dataset.weather !== atmosphere.weather) gameRoot.dataset.weather = atmosphere.weather;
-  const solarAngle = (elapsed / (18 * 60)) * Math.PI * 2;
-  sun.position.set(Math.cos(solarAngle) * 16, 22 + Math.max(0, Math.sin(solarAngle)) * 4, Math.sin(solarAngle) * 10);
+  // Keep the key-light direction stable: the cached shadow map then stays in
+  // step with every surface while sky and light colour carry the time-of-day.
   const isFlying = flightState !== 'grounded';
   const moveSpeed = isFlying ? 5.4 : 4.2;
   const movement = new T.Vector3();
@@ -1417,13 +1799,14 @@ function applyAppearance() {
 
 function updateWorld() {
   renderer.shadowMap.needsUpdate = true;
+  syncGardenTransform();
   districtWorld.sync(state);
   applyAppearance();
 }
 
 // The same save key and decoder keep earlier gardens, profiles, and characters intact.
 districtWorld.activate('garden');
-districtWorld.sync(state);
+updateWorld();
 renderer.setAnimationLoop(animate);
 
 // Offline shell. This is the only place this file touches the service worker

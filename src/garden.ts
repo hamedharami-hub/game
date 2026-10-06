@@ -1,5 +1,7 @@
 import * as T from 'three';
 import { cellUnlocked, gridSize, growthStage, harvest, plantAt, species, type Plant, type Species, type State } from './state';
+import { planetElevation } from './interactions';
+import { gardenTangentEuler } from './garden-transform';
 
 type Cell = { col: number; row: number; sx: number; sz: number; color: string };
 type BloomParticle = { mesh: T.Mesh; velocity: T.Vector3; bornAt: number };
@@ -25,7 +27,9 @@ export function createGarden(
   onProjects: () => void,
 ) {
   const root = new T.Group();
-  root.position.set(-2, .02, 14);
+  root.position.set(-2, planetElevation(-2, 14) + .02, 14);
+  const initialOrientation = gardenTangentEuler(-2, 14, 0);
+  root.rotation.set(initialOrientation.x, initialOrientation.y, initialOrientation.z, initialOrientation.order);
   root.name = 'planting-garden';
   scene.add(root);
 
@@ -569,6 +573,16 @@ export function createGarden(
     redraw();
   }
 
+  function setTransform(x: number, z: number, rotation = 0) {
+    if (![x, z, rotation].every(Number.isFinite)) return false;
+    root.position.set(x, planetElevation(x, z) + .02, z);
+    const orientation = gardenTangentEuler(x, z, rotation);
+    root.rotation.set(orientation.x, orientation.y, orientation.z, orientation.order);
+    root.updateMatrixWorld(true);
+    redraw();
+    return true;
+  }
+
   function tick(now: number) {
     if (now >= lastTick && now - lastTick < 160) return;
     const delta = Math.min(.2, Math.max(0, (now - lastTick) / 1000));
@@ -605,10 +619,14 @@ export function createGarden(
     close,
     redraw,
     tick,
+    setTransform,
     get editing() { return editing; },
     owns: (raycaster: T.Raycaster) => cellMesh.visible && raycaster.intersectObject(cellMesh, false).length > 0,
     root,
-    focus: new T.Vector3(-2, 0, 9),
+    get focus() {
+      root.updateMatrixWorld(true);
+      return root.localToWorld(new T.Vector3(0, 0, -5));
+    },
     hit(raycaster: T.Raycaster) {
       if (!editing) return false;
       const hit = raycaster.intersectObject(cellMesh, false)[0];

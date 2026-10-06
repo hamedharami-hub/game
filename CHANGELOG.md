@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Waterfall, spirit tree and free landscape building
+- Enriched the shared Two-Horn land with a wider, softly luminous winding river, a short waterfall with moving glints, and a spirit tree with a glowing heart and drifting lights. The grove remains part of the same walkable landscape.
+- Opened a broad grove clearing around the river and spirit tree so the landmark reads clearly in the wide landscape view.
+- Added free placement for trees, spirit trees, flowers, flower clusters, garden beds, cottages, cabins, gazebos, bridges, and wells. Ground previews show clear and blocked positions; placed items can be moved, rotated, and removed.
+- Made the live planting garden movable. Existing flowers and their growth remain attached to the garden when it is relocated.
+- Aligned the movable garden and placed objects to the curved land surface. Bridge placement can span the river, and both its saved crossing and fixed plank crossings stay walkable.
+- Batched complex placement previews into one draw call (two for the live-garden footprint), while keeping previews selectable through, tinting valid/blocked positions, and disposing owned preview resources.
+- Kept the top bar focused on planting, free building and companions; flight remains available in the companion menu.
+- Kept construction free and saved new placements alongside existing local profiles and version-1 gardens.
+
 ## Unreleased — Draw calls, delivery and accessibility
 - Cut draw calls per rendered frame from 397 to 65 on desktop and 232 to 41 on mobile. The garden soil grid alone was 144 draw calls in every frame, and each flower cost about ten more, so a full garden cost roughly 1,996; it now costs 72 and is flat in plant count. The soil grid is one instanced mesh, per-plant parts are instanced batches, the static world is merged into vertex-coloured batches, and fauna is consolidated. Rendered world pixels are unchanged to within noise (0.001% of pixels differ by more than 24).
 - Made `dist/` an installable offline PWA with a web app manifest, a hand-written service worker, an SVG icon, Open Graph tags and a `<noscript>` fallback — with no new dependency and no build-config change. The single-file `release/play.html` remains the offline guarantee and was left untouched.

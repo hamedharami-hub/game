@@ -24,6 +24,13 @@ import {
   calculateEmbraceTransform,
   adjustFlightAltitude,
   resolveObstacleCollision,
+  projectPointToLand,
+  snapPointToGrid,
+  projectAndSnapToLand,
+  isFootprintInsideLand,
+  stepPlacementRotation,
+  circlesOverlap,
+  isPlacementClear,
   MIN_FLIGHT_ALTITUDE,
   MAX_FLIGHT_ALTITUDE,
 } from './interactions.ts';
@@ -469,3 +476,48 @@ test('resolveObstacleCollision pushes character out of obstacle radius smoothly'
   assert.equal(emptyRes.z, 2.0);
 });
 
+test('placement projection preserves free points and clamps object footprints to a circular edge', () => {
+  const land = { x: 4, z: -3, radius: 10 };
+  assert.deepEqual(projectPointToLand({ x: 7, z: 1 }, land, 1), { x: 7, z: 1 });
+
+  const edge = projectPointToLand({ x: 30, z: -3 }, land, 2);
+  assert.ok(Math.abs(edge.x - 12) < 1e-10);
+  assert.equal(edge.z, -3);
+  assert.ok(isFootprintInsideLand(edge, 2, land));
+  assert.equal(isFootprintInsideLand({ x: 13, z: -3 }, 2, land), false);
+  assert.deepEqual(projectPointToLand({ x: NaN, z: Infinity }, land, 1), { x: 4, z: -3 });
+  assert.deepEqual(projectPointToLand({ x: 50, z: 50 }, land, 99), { x: 4, z: -3 });
+});
+
+test('placement snapping is optional and re-clamps snapped objects at the land boundary', () => {
+  assert.deepEqual(snapPointToGrid({ x: 1.24, z: -2.26 }), { x: 1, z: -2.5 });
+  assert.deepEqual(snapPointToGrid({ x: 1.24, z: -2.26 }, 0), { x: 1.24, z: -2.26 });
+  const land = { x: 0, z: 0, radius: 5 };
+  const placed = projectAndSnapToLand({ x: 20, z: 0 }, land, 0.8, 1);
+  assert.ok(isFootprintInsideLand(placed, 0.8, land));
+  assert.ok(Number.isFinite(placed.x) && Number.isFinite(placed.z));
+  const tinyGrid = snapPointToGrid({ x: 1, z: 2 }, Number.MIN_VALUE);
+  assert.ok(Number.isFinite(tinyGrid.x) && Number.isFinite(tinyGrid.z));
+});
+
+test('placement rotation advances in stable wrapped steps and tolerates invalid inputs', () => {
+  const step = Math.PI / 4;
+  assert.ok(Math.abs(stepPlacementRotation(0, 1, step) - step) < 1e-12);
+  assert.ok(Math.abs(stepPlacementRotation(0, -1, step) + step) < 1e-12);
+  assert.ok(Math.abs(stepPlacementRotation(Math.PI - step / 2, 1, step) + Math.PI - step / 2) < 1e-12);
+  assert.ok(Math.abs(stepPlacementRotation(NaN, 1) - Math.PI / 12) < 1e-12);
+  assert.equal(stepPlacementRotation(1, Infinity), 1);
+});
+
+test('placement collision checks use circular footprints with optional clearance', () => {
+  const object = { x: 0, z: 0, radius: 1 };
+  const tree = { x: 2.1, z: 0, radius: 1 };
+  const pond = { x: -4, z: 0, radius: 2 };
+  assert.equal(circlesOverlap(object, tree), false);
+  assert.equal(circlesOverlap(object, tree, 0.2), true);
+  assert.equal(circlesOverlap(object, pond), false);
+  assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [tree, pond]), true);
+  assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [tree], 0.2), false);
+  assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [{ x: NaN, z: 0, radius: 2 }]), true);
+  assert.equal(isPlacementClear({ x: Infinity, z: 0 }, 1, []), false);
+});

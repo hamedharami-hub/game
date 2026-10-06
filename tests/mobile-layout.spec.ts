@@ -6,7 +6,7 @@ const expectNoHorizontalOverflow = async (page: import('@playwright/test').Page)
 };
 
 test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
-  test('390px mobile viewport: all 5 header action buttons on row 1 with box.y < 40 and zero scroll', async ({ page }) => {
+  test('390px mobile viewport: four primary header actions fit on row 1 and flight works from companions', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const errors: string[] = [];
     page.on('pageerror', err => errors.push(err.message));
@@ -26,12 +26,11 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
     const titleText = page.locator('.brand > span:not(.brand-mark)');
     await expect(titleText).toBeHidden();
 
-    // Verify all 5 action buttons
+    // Verify the four primary actions, including the camera-view control.
     const buttons = [
       '#plant-action',
       '#build-action',
       '#people-action',
-      '#flight-toggle-btn',
       '#camera-view',
     ];
 
@@ -59,20 +58,25 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       }
     }
 
-    // Toggle flight button on 390px viewport
-    const flightBtn = page.locator('#flight-toggle-btn');
-    await expect(flightBtn).toHaveAttribute('aria-pressed', 'false');
-    await flightBtn.click();
-    await expect(flightBtn).toHaveAttribute('aria-pressed', 'true');
+    // Flight starts and lands through the companion dialog.
+    await expect(page.locator('#flight-ascend-btn')).toBeHidden();
+    await expect(page.locator('#flight-descend-btn')).toBeHidden();
+    await page.locator('#people-action').click();
+    await expect(page.locator('#overlay .dialog')).toBeVisible();
+    await page.locator('[data-social="fly"]').click();
+    await expect(page.locator('#ambient-status')).toContainText('پرواز دونفره آغاز شد');
+    await expect(page.locator('#flight-ascend-btn')).toBeVisible();
+    await expect(page.locator('#flight-descend-btn')).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
-    // Verify button remains on row 1 after active state change
-    const activeFlightBox = await flightBtn.boundingBox();
-    expect(activeFlightBox!.y).toBeLessThan(40);
-
-    // Toggle off
-    await flightBtn.click();
-    await expect(flightBtn).toHaveAttribute('aria-pressed', 'false');
+    await page.locator('#people-action').click();
+    const landButton = page.locator('[data-social="fly"]');
+    await expect(landButton).toHaveText('فرود آمدن');
+    await landButton.click();
+    await expect(page.locator('#ambient-status')).toContainText('فرود نرم');
+    await expect(page.locator('#ambient-status')).toHaveText('به آرامی روی سبزه فرود آمدید.');
+    await expect(page.locator('#flight-ascend-btn')).toBeHidden();
+    await expect(page.locator('#flight-descend-btn')).toBeHidden();
     await expectNoHorizontalOverflow(page);
 
     expect(errors).toEqual([]);
@@ -125,11 +129,183 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       await expect(page.locator('canvas')).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      for (const id of ['#plant-action', '#build-action', '#people-action', '#flight-toggle-btn', '#camera-view']) {
+      for (const id of ['#plant-action', '#build-action', '#people-action', '#camera-view']) {
         await expect(page.locator(id)).toBeVisible();
         const box = await page.locator(id).boundingBox();
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       }
     }
+  });
+
+  test('390px free-build tray stays reachable by touch and keyboard', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+
+    await page.addInitScript(({ key, state }) => {
+      localStorage.setItem(key, JSON.stringify(state));
+    }, {
+      key: 'dream-caravan:garden:v1:profile:mobile-build-accessibility',
+      state: {
+        version: 1,
+        collected: [],
+        plants: [],
+        landscapePlacements: [{ id: 'mobile-tree', kind: 'tree', x: 10, z: 20, rotation: 0 }],
+        visited: ['garden'],
+        worldSeed: 1,
+      },
+    });
+
+    await page.goto('/?profile=mobile-build-accessibility');
+    await expect(page.locator('canvas')).toBeVisible();
+    await page.locator('#build-action').click();
+
+    const tray = page.locator('#build-palette');
+    const buildButton = page.locator('#build-action');
+    const firstTool = page.locator('#build-tools [data-kind="tree"]');
+    const status = page.locator('#placement-status');
+    await expect(tray).toBeVisible();
+    await expect(buildButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(firstTool).toBeFocused();
+    await expect(status).toHaveAttribute('role', 'status');
+    await expect(status).toHaveAttribute('aria-live', 'polite');
+    await expect(status).toContainText('برگزین');
+
+    // The native picker exposes saved props to keyboard users. After choosing
+    // one, focus moves to the world so arrows move it and Delete removes it.
+    const objectPicker = page.locator('#landscape-object-select');
+    await expect(objectPicker).toHaveAccessibleName('انتخاب سازه برای ویرایش');
+    await expect(objectPicker.locator('option[value="mobile-tree"]')).toHaveCount(1);
+    await objectPicker.selectOption('mobile-tree');
+    const canvas = page.locator('#world canvas');
+    await expect(canvas).toBeFocused();
+    const savedPropPreview = page.locator('#placement-preview');
+    await expect(savedPropPreview).toBeVisible();
+    await expect(page.locator('#remove-landscape')).toBeEnabled();
+    const propPreviewBefore = await savedPropPreview.evaluate(element => ({
+      left: element.style.left,
+      top: element.style.top,
+    }));
+    await page.keyboard.press('ArrowRight');
+    const propPreviewAfter = await savedPropPreview.evaluate(element => ({
+      left: element.style.left,
+      top: element.style.top,
+    }));
+    expect(propPreviewAfter).not.toEqual(propPreviewBefore);
+    await page.keyboard.press('Delete');
+    await expect(page.locator('#remove-landscape')).toBeDisabled();
+    await expect(objectPicker.locator('option[value="mobile-tree"]')).toHaveCount(0);
+    const savedProps = await page.evaluate(() => JSON.parse(localStorage.getItem(
+      'dream-caravan:garden:v1:profile:mobile-build-accessibility',
+    )!).landscapePlacements);
+    expect(savedProps).toEqual([]);
+
+    // Native Enter activation must still select palette buttons while a preview
+    // is active; Enter is also the canvas placement shortcut.
+    await firstTool.focus();
+    await page.keyboard.press('Enter');
+    await expect(firstTool).toHaveAttribute('aria-pressed', 'true');
+    const spiritTreeTool = page.locator('#build-tools [data-kind="spirit-tree"]');
+    await spiritTreeTool.focus();
+    await page.keyboard.press('Enter');
+    await expect(spiritTreeTool).toHaveAttribute('aria-pressed', 'true');
+    await expect(firstTool).toHaveAttribute('aria-pressed', 'false');
+
+    const trayBounds = await tray.boundingBox();
+    expect(trayBounds).not.toBeNull();
+    expect(trayBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(trayBounds!.x + trayBounds!.width).toBeLessThanOrEqual(390);
+    expect(trayBounds!.y + trayBounds!.height).toBeLessThanOrEqual(844);
+    const horizontalSizes = await tray.evaluate(element => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth,
+    }));
+    expect(horizontalSizes.scroll).toBeLessThanOrEqual(horizontalSizes.client);
+    await expectNoHorizontalOverflow(page);
+
+    // Escape closes the tray and restores focus to the button that opened it.
+    await page.keyboard.press('Escape');
+    await expect(tray).toBeHidden();
+    await expect(buildButton).toBeFocused();
+
+    // A build-mode arrow key nudges the preview while the game suppresses normal
+    // movement input. Check the visible preview response and that the page itself
+    // does not scroll as the key is handled.
+    await buildButton.click();
+    await firstTool.click();
+    const preview = page.locator('#placement-preview');
+    await expect(preview).toBeVisible();
+
+    // Persian keyboard layouts report a Persian character for the physical R
+    // key. Keep the KeyR code path working even when `event.key` is localized.
+    const persianR = await page.evaluate(async () => {
+      const statusNode = document.querySelector<HTMLElement>('#placement-status')!;
+      const observed: string[] = [];
+      const observer = new MutationObserver(records => {
+        for (const record of records) {
+          for (const node of record.addedNodes) observed.push(node.textContent ?? '');
+        }
+      });
+      observer.observe(statusNode, { childList: true, subtree: true, characterData: true });
+      const event = new KeyboardEvent('keydown', {
+        key: 'ق', code: 'KeyR', bubbles: true, cancelable: true,
+      });
+      window.dispatchEvent(event);
+      await Promise.resolve();
+      observer.disconnect();
+      return { handled: event.defaultPrevented, messages: observed };
+    });
+    expect(persianR.handled).toBe(true);
+    expect(persianR.messages.some(message => message.includes('چرخش'))).toBe(true);
+
+    const beforeNudge = await preview.evaluate(element => ({
+      left: element.style.left,
+      top: element.style.top,
+    }));
+    const companionPrompt = page.locator('#interact');
+    await expect(companionPrompt).toBeEnabled();
+    const companionLabel = await companionPrompt.getAttribute('aria-label');
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(1200);
+    await page.keyboard.up('ArrowRight');
+    const afterNudge = await preview.evaluate(element => ({
+      left: element.style.left,
+      top: element.style.top,
+    }));
+    expect(afterNudge).not.toEqual(beforeNudge);
+    // The starting companions are close enough to talk. Holding an arrow in
+    // build mode must move only the placement cursor, not the player away from them.
+    await expect(companionPrompt).toBeEnabled();
+    await expect(companionPrompt).toHaveAttribute('aria-label', companionLabel!);
+    expect(await page.evaluate(() => document.documentElement.scrollTop)).toBe(0);
+    await expect(buildButton).toHaveAttribute('aria-pressed', 'true');
+
+    const toolsSize = await tray.evaluate(element => ({
+      client: element.clientHeight,
+      scroll: element.scrollHeight,
+    }));
+    expect(toolsSize.scroll).toBeGreaterThan(toolsSize.client);
+    await tray.evaluate(element => { element.scrollTop = element.scrollHeight; });
+
+    const rotate = page.locator('#rotate-landscape-right');
+    await expect(rotate).toBeVisible();
+    const rotateBounds = await rotate.boundingBox();
+    expect(rotateBounds).not.toBeNull();
+    expect(rotateBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(rotateBounds!.x + rotateBounds!.width).toBeLessThanOrEqual(390);
+    expect(rotateBounds!.y).toBeGreaterThanOrEqual(0);
+    expect(rotateBounds!.y + rotateBounds!.height).toBeLessThanOrEqual(844);
+    expect(rotateBounds!.width).toBeGreaterThanOrEqual(44);
+    expect(rotateBounds!.height).toBeGreaterThanOrEqual(44);
+    await rotate.click();
+    await expect(status).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    // Finish remains reachable after scrolling and also returns focus cleanly.
+    await tray.evaluate(element => { element.scrollTop = 0; });
+    await page.locator('#finish-building').click();
+    await expect(tray).toBeHidden();
+    await expect(buildButton).toBeFocused();
+    expect(errors).toEqual([]);
   });
 });

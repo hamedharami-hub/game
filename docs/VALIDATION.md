@@ -1,4 +1,20 @@
-# Validation — 2026-10-06 · v0.4.0 + Phase 1 & Phase 2 hardening
+# Latest validation — 2026-10-06 · Free Two-Horn landscape
+
+This update expands the existing single world with a more open grove, a clearer luminous river and waterfall, a spirit tree, and free landscape building. Saved placements can be moved, turned, and removed; the live planting garden keeps all plant records and remains one movable garden.
+
+| Check | Result |
+| --- | --- |
+| `npm test` | 133 passed, 0 failed/skipped |
+| `npm run build` | Passed: art verification, TypeScript, standalone export and all 6 budget checks |
+| `npx playwright test` | 16 passed, 0 failed/skipped |
+| Browser coverage | 1440px desktop and 390px mobile; build, rotate, move, remove, save/reload, legacy saves, eight movement directions, flight controls, reduced motion, keyboard reachability, and offline `release/play.html` |
+| `git diff --check` | Passed |
+
+The 133 unit tests and production build passed after the final source and style changes. The Playwright suite passed against the regenerated production preview. `release/play.html` contains 21 embedded images and no raw `/art/` references. Rendering and screenshots were checked under Chromium SwiftShader; this does not measure physical-phone performance.
+
+Fresh screenshots: [wide landscape](../previews/two-horn-wide-land-1440.png) · [mobile free-build tray](../previews/two-horn-build-mobile-390.png).
+
+## Previous validation — v0.4.0, Phase 1 and Phase 2
 
 Phase 1 and Phase 2 are performance, delivery and accessibility changes; no gameplay, save or artwork behaviour changed.
 

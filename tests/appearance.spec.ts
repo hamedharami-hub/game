@@ -29,7 +29,26 @@ test('all approved character looks and diagonal atlases decode; saved appearance
   expect(decoded).toEqual(atlases.map(asset => [asset.width, asset.height]));
 
   await page.locator('#build-action').click();
-  await page.locator('[data-furnishing]').first().click();
+  await expect(page.locator('#build-palette')).toBeVisible();
+  await page.locator('[data-kind="tree"]').click();
+  const canvas = page.locator('#world canvas');
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) throw new Error('world canvas has no layout box');
+  let buildPoint: { x: number; y: number } | undefined;
+  for (const [xRatio, yRatio] of [[0.42, 0.24], [0.62, 0.24], [0.36, 0.32], [0.57, 0.34], [0.48, 0.18], [0.33, 0.42]]) {
+    const candidate = { x: canvasBox.x + canvasBox.width * xRatio, y: canvasBox.y + canvasBox.height * yRatio };
+    await page.mouse.move(candidate.x, candidate.y);
+    if (await page.locator('#placement-status').getAttribute('data-placement-state') === 'valid') {
+      buildPoint = candidate;
+      break;
+    }
+  }
+  if (!buildPoint) throw new Error('could not find clear land for the appearance save check');
+  await page.mouse.click(buildPoint.x, buildPoint.y);
+  await expect.poll(async () => {
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('dream-caravan:garden:v1:profile:identity-memory')!));
+    return saved.landscapePlacements?.length ?? 0;
+  }).toBe(1);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('dream-caravan:garden:v1:profile:identity-memory')!));
   expect(saved).toMatchObject({
     gorHair: 'brown',

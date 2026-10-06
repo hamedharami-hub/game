@@ -179,19 +179,13 @@ header {
   background: var(--forest);
 }
 
-#plant-action, #build-action, #people-action, #flight-toggle-btn {
+#plant-action, #build-action, #people-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
 }
 
-#flight-toggle-btn { color: var(--forest-deep); }
-#flight-toggle-btn[aria-pressed="true"] {
-  color: #fffdf5;
-  background: linear-gradient(135deg, #3a6c51, #244837);
-  box-shadow: 0 4px 14px rgb(29 54 40 / 30%);
-}
 #flight-ascend-btn, #flight-descend-btn {
   display: inline-flex;
   align-items: center;
@@ -202,6 +196,7 @@ header {
   font-weight: 700;
   transition: background-color 180ms ease, transform 180ms ease;
 }
+#flight-ascend-btn[hidden], #flight-descend-btn[hidden] { display: none; }
 #flight-ascend-btn:active, #flight-descend-btn:active {
   transform: scale(0.94);
   background: rgba(145, 205, 179, 0.6);
@@ -400,7 +395,7 @@ footer > * { pointer-events: auto; }
   .brand small { display: none; }
   .action-bar { gap: 5px; }
   .action-bar { flex: 0 1 auto; }
-  .action-bar button, #camera-view, #flight-toggle-btn {
+  .action-bar button, #camera-view {
     min-width: 44px;
     min-height: 44px;
     padding: 7px 9px;
@@ -433,9 +428,7 @@ footer > * { pointer-events: auto; }
   .brand > span:not(.brand-mark) { display: none; }
   .brand-mark { margin: 0; }
   .action-bar { gap: 4px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
-  /* Widths stay shrinkable here: flight mode exposes eight controls, and 8x44px + gaps
-     cannot fit a 390px header, so only the 44px height is guaranteed at this breakpoint. */
-  .action-bar button, #camera-view, #flight-toggle-btn { min-width: 0; min-height: 44px; padding: 6px 6px; font-size: 10px; white-space: nowrap; flex: 0 1 auto; }
+  .action-bar button, #camera-view { min-width: 0; min-height: 44px; padding: 6px 6px; font-size: 10px; white-space: nowrap; flex: 0 1 auto; }
   .action-bar { flex: 1 1 auto; }
   .companion-actions {
     grid-template-columns: repeat(2, 1fr);
@@ -459,7 +452,7 @@ footer > * { pointer-events: auto; }
   .brand { width: 40px; justify-content: center; }
   .brand > span:not(.brand-mark) { display: none; }
   .action-bar { justify-content: space-between; }
-  .action-bar button, #camera-view, #flight-toggle-btn { padding-inline: 5px; font-size: 9px; }
+  .action-bar button, #camera-view { padding-inline: 5px; font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -521,3 +514,371 @@ footer > * { pointer-events: auto; }
   letter-spacing: 0.02em;
 }
 
+/* Free placement palette: keep the world open and group every build action in one
+   quiet, high-contrast tray. The same hooks also cover keyboard and touch users. */
+#build-palette.build-palette,
+.build-palette {
+  position: fixed;
+  z-index: 7;
+  right: 22px;
+  bottom: calc(22px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(326px, calc(100vw - 36px));
+  max-height: min(66dvh, 650px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgb(255 255 255 / 88%);
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--glass);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+  overscroll-behavior: contain;
+  scroll-padding-block: 12px;
+}
+
+#build-palette[hidden], .build-palette[hidden], .object-controls[hidden] {
+  display: none !important;
+}
+
+.build-palette__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.build-palette__heading h2,
+.build-palette__heading h3,
+.build-palette__heading strong {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.build-palette__heading button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 7px 10px;
+}
+
+.build-palette__hint,
+.build-palette__status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.build-object-picker {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.build-object-picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid #c6d2c3;
+  border-radius: 12px;
+  color: #263c33;
+  background: #fffdf7;
+  touch-action: manipulation;
+}
+
+.build-palette__tools,
+.build-palette__items,
+.build-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.build-tool {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 8px 11px;
+  border: 1px solid #c6d2c3;
+  border-radius: 14px;
+  color: #263c33;
+  background: #fffdf7;
+  box-shadow: 0 1px 3px rgb(32 55 42 / 7%);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.build-tool:hover:not(:disabled) {
+  border-color: #59795f;
+  background: #f8fbf1;
+}
+
+.build-tool[aria-pressed="true"],
+.build-tool[aria-current="true"],
+.build-tool.is-selected {
+  padding-inline-end: 29px;
+  border-color: #244538;
+  color: #fffdf5;
+  background: #315847;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 30%), 0 3px 8px rgb(27 51 39 / 17%);
+}
+
+.build-tool[aria-pressed="true"]::after,
+.build-tool[aria-current="true"]::after,
+.build-tool.is-selected::after {
+  position: absolute;
+  inset-inline-end: 9px;
+  top: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 1px solid rgb(255 255 255 / 75%);
+  border-radius: 50%;
+  color: #244538;
+  background: #fffdf5;
+  content: "✓";
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.build-tool__icon,
+.build-tool [aria-hidden="true"] {
+  flex: 0 0 auto;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  color: #315847;
+  background: #e7efdf;
+  font-size: 16px;
+}
+
+.build-tool[aria-pressed="true"] .build-tool__icon,
+.build-tool[aria-pressed="true"] [aria-hidden="true"],
+.build-tool[aria-current="true"] .build-tool__icon,
+.build-tool[aria-current="true"] [aria-hidden="true"],
+.build-tool.is-selected .build-tool__icon,
+.build-tool.is-selected [aria-hidden="true"] {
+  color: #fffdf5;
+  background: rgb(255 255 255 / 16%);
+}
+
+.build-palette [data-placement-state] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 2px solid #315847;
+  border-radius: 13px;
+  color: #173d2c;
+  background: #f4faed;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.build-palette [data-placement-state="valid"]::before {
+  flex: 0 0 auto;
+  content: "✓";
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.build-palette [data-placement-state="idle"] {
+  border-color: #829383;
+  color: #30473b;
+  background: #f7f8f0;
+}
+
+.build-palette [data-placement-state="invalid"],
+.build-palette [data-placement-state="blocked"] {
+  border-color: #8d312b;
+  border-style: dashed;
+  color: #671b17;
+  background: #fff0ed;
+}
+
+.build-palette [data-placement-state="invalid"]::before,
+.build-palette [data-placement-state="blocked"]::before {
+  flex: 0 0 auto;
+  content: "×";
+  font-size: 17px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.object-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid #cbd6c7;
+}
+
+.object-controls button,
+.object-control {
+  flex: 1 1 100px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  color: #263c33;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.object-controls [data-action="remove"],
+.object-controls #remove-object,
+.object-controls .object-control--remove {
+  border-color: #b77b74;
+  color: #6d211b;
+  background: #fff3ef;
+}
+
+.object-controls [data-action="remove"]:hover:not(:disabled),
+.object-controls #remove-object:hover:not(:disabled),
+.object-controls .object-control--remove:hover:not(:disabled) {
+  border-color: #8d312b;
+  background: #ffe7e1;
+}
+
+/* A DOM placement marker can follow the world-space preview while the canvas
+   receives the same state through its mesh material. Validity has shape cues as
+   well as color so the distinction survives reduced color discrimination. */
+.placement-preview {
+  position: fixed;
+  z-index: 2;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 3px solid #255b3d;
+  border-radius: 50%;
+  color: #163d2a;
+  background: rgb(211 245 204 / 72%);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 82%), 0 3px 14px rgb(22 49 34 / 32%);
+  pointer-events: none;
+}
+.placement-preview[hidden] { display: none !important; }
+
+.placement-preview[data-placement-state="invalid"],
+.placement-preview[data-placement-state="blocked"],
+.placement-preview.is-invalid {
+  border: 3px dashed #8d211b;
+  color: #741e19;
+  background: rgb(255 199 189 / 82%);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 88%), 0 3px 14px rgb(54 22 19 / 34%);
+}
+
+main.building .placement-preview::after { content: "✓"; font-size: 18px; font-weight: 900; }
+main.building .placement-preview[data-placement-state="invalid"]::after,
+main.building .placement-preview[data-placement-state="blocked"]::after,
+main.building .placement-preview.is-invalid::after { content: "×"; }
+
+main.building #build-action {
+  border-color: #244538;
+  color: #fffdf5;
+  background: #315847;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 30%), 0 3px 10px rgb(27 51 39 / 18%);
+}
+
+main.building #interact { display: none; }
+
+@media (max-width: 760px) {
+  #build-palette.build-palette,
+  .build-palette {
+    right: 8px;
+    bottom: calc(63px + var(--safe-bottom));
+    left: 8px;
+    width: auto;
+    max-height: min(47dvh, 400px);
+    gap: 8px;
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .build-palette__tools,
+  .build-palette__items,
+  .build-tools { gap: 6px; }
+  .build-tool { min-height: 48px; padding: 7px 9px; font-size: 12px; }
+  .build-object-picker select { min-height: 46px; }
+  .object-controls { gap: 6px; padding-top: 8px; }
+  .object-controls button,
+  .object-control { min-height: 46px; flex-basis: 92px; }
+}
+
+@media (max-width: 430px) {
+  #build-palette.build-palette,
+  .build-palette {
+    right: 6px;
+    left: 6px;
+    bottom: calc(61px + var(--safe-bottom));
+    max-height: min(49dvh, 410px);
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .build-palette__heading h2,
+  .build-palette__heading h3,
+  .build-palette__heading strong { font-size: 15px; }
+  .build-palette__tools,
+  .build-palette__items,
+  .build-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .build-tool { min-height: 46px; gap: 7px; padding: 6px 8px; font-size: 11px; }
+  .build-object-picker { font-size: 12px; }
+  .build-tool__icon,
+  .build-tool [aria-hidden="true"] { width: 25px; height: 25px; font-size: 14px; }
+}
+
+/* A short viewport is usually a phone held sideways. Keep the scene visible and
+   let the palette scroll within the side gutter instead of consuming the horizon. */
+@media (max-height: 520px) and (min-width: 600px) {
+  #build-palette.build-palette,
+  .build-palette {
+    top: calc(64px + var(--safe-top));
+    right: 10px;
+    bottom: calc(10px + var(--safe-bottom));
+    left: auto;
+    width: min(310px, 39vw);
+    max-height: none;
+    padding: 10px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  #build-palette.build-palette,
+  .build-palette { border: 2px solid #203d2c; background: #fffdf4; }
+  .build-tool { border: 2px solid #405849; color: #14271c; background: #fffdf4; }
+  .build-tool[aria-pressed="true"],
+  .build-tool[aria-current="true"],
+  .build-tool.is-selected { border-color: #14271c; color: #fff; background: #173d2c; }
+  .build-palette [data-placement-state="valid"] { border-color: #173d2c; color: #102b1e; background: #fff; }
+  .build-palette [data-placement-state="invalid"],
+  .build-palette [data-placement-state="blocked"] { border-color: #741e19; color: #54130f; background: #fff; }
+  .object-controls button,
+  .object-control { border: 2px solid #405849; }
+  .build-object-picker select { border: 2px solid #405849; color: #14271c; background: #fffdf4; }
+}
