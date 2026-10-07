@@ -12,8 +12,10 @@ export type IntimacyActionKind = 'handhold' | 'fly' | 'hug' | 'wave' | 'sit' | '
 /** Calculates spherical planet elevation drop to produce rolling planetary horizon. */
 export function planetElevation(x: number, z: number): number {
   if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
-  const d2 = x * x + z * z;
-  return -0.00032 * d2;
+  const distance = Math.hypot(x, z);
+  const maxRepresentableDistance = Math.sqrt(Number.MAX_VALUE) / Math.sqrt(0.00032);
+  if (!Number.isFinite(distance) || distance >= maxRepresentableDistance) return -Number.MAX_VALUE;
+  return -0.00032 * distance * distance;
 }
 
 export interface IntimacyActionDescriptor {
@@ -182,7 +184,7 @@ export function isFootprintInsideLand(
   land: PlacementLand,
 ): boolean {
   const candidate = finitePoint(point);
-  if (!candidate || !Number.isFinite(land?.radius) || land.radius < 0) return false;
+  if (!candidate || !Number.isFinite(footprintRadius) || footprintRadius < 0 || !Number.isFinite(land?.radius) || land.radius < 0) return false;
   const centerX = Number.isFinite(land.x) ? land.x : 0;
   const centerZ = Number.isFinite(land.z) ? land.z : 0;
   const footprint = nonNegativeFinite(footprintRadius);
@@ -225,7 +227,7 @@ export function isPlacementClear(
   clearance = 0,
 ): boolean {
   const candidate = finitePoint(point);
-  if (!candidate || !Array.isArray(obstacles)) return false;
+  if (!candidate || !Number.isFinite(footprintRadius) || footprintRadius < 0 || !Array.isArray(obstacles)) return false;
   const placedFootprint: ObstacleCircle = {
     ...candidate,
     radius: nonNegativeFinite(footprintRadius),
@@ -269,7 +271,7 @@ export function resolveObstacleCollision(
       const obs = obstacles[i];
       const ox = Number.isFinite(obs?.x) ? obs.x : 0;
       const oz = Number.isFinite(obs?.z) ? obs.z : 0;
-      const or = Number.isFinite(obs?.radius) ? obs.radius : 0.5;
+      const or = Number.isFinite(obs?.radius) ? Math.max(0, obs.radius) : 0.5;
 
       const dx = cx - ox;
       const dz = cz - oz;
@@ -425,9 +427,17 @@ export function computeHandPositions(
   const handHeight = 1.15;
   const reachDist = 0.28;
 
-  const dx = gx - ax;
-  const dz = gz - az;
-  const horizDist = Math.hypot(dx, dz);
+  let dx = gx - ax;
+  let dz = gz - az;
+  let horizDist = Math.hypot(dx, dz);
+  // Subtracting opposite, very large finite coordinates can overflow before
+  // normalization. Scale the inputs only for that case to keep the direction finite.
+  if (!Number.isFinite(horizDist)) {
+    const scale = Math.max(Math.abs(ax), Math.abs(gx), Math.abs(az), Math.abs(gz));
+    dx = gx / scale - ax / scale;
+    dz = gz / scale - az / scale;
+    horizDist = Math.hypot(dx, dz);
+  }
 
   if (horizDist > 1e-4) {
     const ux = dx / horizDist;
@@ -469,7 +479,7 @@ export function toggleHandHolding(
       mode: 'ground',
     };
   }
-  if (distance <= maxProximity) {
+  if (Number.isFinite(distance) && distance >= 0 && Number.isFinite(maxProximity) && maxProximity >= 0 && distance <= maxProximity) {
     return {
       ...state,
       isHandHolding: true,
@@ -486,9 +496,14 @@ export function toggleFlight(
   state: TraversalState,
   cruiseAlt: number = CRUISE_ALTITUDE
 ): TraversalState {
+  const targetAltitude = Number.isFinite(cruiseAlt)
+    ? Math.max(MIN_FLIGHT_ALTITUDE, Math.min(MAX_FLIGHT_ALTITUDE, cruiseAlt))
+    : CRUISE_ALTITUDE;
   if (state.isFlying) {
     return {
       ...state,
+      mode: 'soaring',
+      isHandHolding: false,
       flightState: 'descending',
       targetAltitude: 0,
     };
@@ -496,8 +511,9 @@ export function toggleFlight(
   return {
     ...state,
     isFlying: true,
+    isHandHolding: false,
     flightState: 'ascending',
-    targetAltitude: cruiseAlt,
+    targetAltitude,
     mode: 'soaring',
   };
 }

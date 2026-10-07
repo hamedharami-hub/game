@@ -20,7 +20,7 @@
  *   4. Standalone integrity. dist/play.html exists and embeds its artwork,
  *      i.e. no raw `/art/` reference survives inside it.
  *
- * BASELINE SNAPSHOT - the measurement the budgets below were derived from
+ * ORIGINAL BASELINE SNAPSHOT - the measurement the original budgets were derived from
  * (2026-10-06, git 40b9cb0 + completed Phase 1 changes plus the Phase 2
  * landings). Both Phase 2 teammates kept editing after it was taken, so read
  * these numbers as provenance for the budgets, not as current state: the gate
@@ -37,15 +37,15 @@
  * BUDGETS AND WHY THESE HEADROOMS
  *   minTests  115         exact floor - a floor needs no headroom; it only ever
  *                         rises as tests are added, and never silently falls.
- *   jsRaw     654,000 B   baseline + 32,466 B (+5.22%)
- *   jsGzip    178,000 B   baseline + 9,294 B (+5.51%)
+ *   jsRaw     660,000 B   baseline + 38,466 B (+6.19%)
+ *   jsGzip    185,000 B   baseline + 16,294 B (+9.66%)
  *   distTotal 27,500,000 B baseline + 789,618 B (+2.96%)
- * The bundle budgets were frozen at baseline + 6% (rounded up to the next
- * 1,000 B) while the Phase 2 landings were still in flight; both landed inside
- * them with ~5% to spare, which is also the room left for rollup/zlib version
- * noise and post-landing touch-ups. Every structural bundle regression is far
- * larger than that: a second copy of three, a new dependency or artwork
- * entering the bundle all add 100 kB+.
+ * The original bundle budgets were frozen at baseline + 6% while the Phase 2
+ * landings were still in flight. On 2026-10-07, the compact single-world map,
+ * safe landmark walking, arrival cues and numeric/save guards measured 657,085
+ * B raw / 182,319 B gzip. The caps below give those features about 0.4% raw and
+ * 1.4% gzip headroom. Structural regressions remain much larger: a second copy
+ * of three, a new dependency or artwork entering the bundle all add 100 kB+.
  * The dist headroom absorbs the remaining in-flight edits (src/style.css) plus
  * another half-megabyte asset, yet it still fires on any 790 kB+ regression. It
  * sits 8,450,980 B below the 35,950,980 B that re-including the four preserved
@@ -85,8 +85,8 @@ const TEST_TIMEOUT_MS = 300_000;
 
 const BUDGET = Object.freeze({
   minTests: 115,
-  jsRawBytes: 654_000,
-  jsGzipBytes: 178_000,
+  jsRawBytes: 660_000,
+  jsGzipBytes: 185_000,
   distBytes: 27_500_000,
   maxArtPng: 0,
 });

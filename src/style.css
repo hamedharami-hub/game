@@ -179,7 +179,7 @@ header {
   background: var(--forest);
 }
 
-#plant-action, #build-action, #people-action {
+#plant-action, #build-action, #people-action, #map-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -289,6 +289,41 @@ footer > * { pointer-events: auto; }
 }
 
 #overlay[hidden] { display: none; }
+
+.land-map {
+  box-sizing: border-box;
+  max-width: 19rem;
+  padding: .75rem;
+  color: #25372b;
+  background: #f8fbf3;
+  border: 1px solid #c9d8bf;
+  border-radius: 1rem;
+  font: inherit;
+  box-shadow: 0 5px 18px #263b2918;
+}
+.land-map * { box-sizing: border-box; }
+.land-map__heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: 0 0 .4rem; }
+.land-map__title { margin: 0; font-size: 1rem; line-height: 1.35; }
+.land-map__subtitle { margin: 0; color: #52674e; font-size: .72rem; white-space: nowrap; }
+.land-map__visual { display: block; width: 100%; height: auto; border-radius: .8rem; }
+.land-map__water { fill: #cfe7e3; }
+.land-map__land { fill: #9dbb84; stroke: #496d4d; stroke-width: 2.5; }
+.land-map__shore { fill: none; stroke: #e5cf93; stroke-width: 2; stroke-dasharray: 2 4; opacity: .9; }
+.land-map__marker { cursor: pointer; outline: none; }
+.land-map__marker circle { stroke: #f9fff1; stroke-width: 2.4; filter: drop-shadow(0 1px 1px #243d3566); }
+.land-map__marker text { fill: #fff; font: 700 9px sans-serif; pointer-events: none; }
+.land-map__marker:focus circle, .land-map__marker:hover circle, .land-map__marker[aria-pressed="true"] circle { stroke: #213b31; stroke-width: 3.3; }
+.land-map__player { pointer-events: none; }
+.land-map__player-dot { fill: #f2d16f; stroke: #382f1e; stroke-width: 2.2; }
+.land-map__player-arrow { fill: #382f1e; }
+.land-map__landmarks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem; margin: .5rem 0 0; padding: 0; list-style: none; }
+.land-map__button { display: flex; align-items: center; gap: .4rem; min-width: 0; min-height: 2.65rem; padding: .35rem .45rem; color: inherit; text-align: start; font: inherit; font-size: .8rem; line-height: 1.2; background: #fff; border: 1px solid #c7d5c0; border-radius: .65rem; cursor: pointer; }
+.land-map__button:hover, .land-map__button:focus-visible { border-color: #45694b; outline: 2px solid #45694b; outline-offset: 1px; }
+.land-map__button[aria-pressed="true"] { background: #e5efd9; border-color: #52764d; }
+.land-map__index { display: grid; flex: 0 0 1.35rem; width: 1.35rem; height: 1.35rem; place-items: center; color: #fff; font-size: .7rem; font-weight: 700; background: #50724e; border-radius: 50%; }
+.land-map__name { overflow-wrap: anywhere; }
+.land-map__empty { margin: .55rem 0 0; color: #52674e; font-size: .8rem; }
+.land-map__status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .dialog {
   width: min(470px, 100%);

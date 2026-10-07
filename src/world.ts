@@ -840,10 +840,14 @@ export function createWorld(scene: T.Scene) {
   // A soft central heart and a vertical ring distinguish it from the ordinary
   // round-canopy trees scattered across the meadow.
   const heartLight = orb('#f7e5a7', 0.08, 4.65, 0.82, 0.37, elderNook, true);
+  heartLight.name = 'spirit-tree-heart';
   heartLight.material = (heartLight.material as T.MeshStandardMaterial).clone();
+  (heartLight.material as T.MeshStandardMaterial).emissiveIntensity = 0.82;
   drop(heartLight);
   const heartRing = shape(geometries.torus, '#b9f0d2', 0.08, 4.65, 0.84, 0.66, 0.66, 0.66, elderNook, true);
+  heartRing.name = 'spirit-tree-heart-ring';
   heartRing.rotation.y = Math.PI * 0.25;
+  heartRing.scale.setScalar(0.86);
   drop(heartRing);
   for (let i = 0; i < 7; i++) {
     const angle = i * Math.PI * 2 / 7;

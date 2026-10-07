@@ -11,7 +11,10 @@ import {
 } from './state';
 import type { State } from './state';
 import { lookAssets, diagonalAssets } from './appearance';
-import { createWorld } from './world';
+import { createWorld, districts } from './world';
+import { renderLandMap, type LandMapHandle, type LandMapLandmark } from './land-map';
+import { createLandmarkArrivalTracker } from './exploration';
+import { planWalkableRoute } from './navigation';
 import { createAudioEngine, type AudioEngine } from './audio';
 import { createVisualFXSystem, computeNightIntensity, calculateShadowParams, type VisualFXSystem } from './particles';
 import {
@@ -57,6 +60,7 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
     <button id="plant-action" class="glass" aria-label="کاشت گل">کاشت</button>
       <button id="build-action" class="glass" aria-label="ساخت‌وساز آزاد" aria-pressed="false">ساخت آزاد</button>
       <button id="people-action" class="glass" aria-label="دیدار با همراهان">همراه‌ها</button>
+      <button id="map-action" class="glass" aria-label="نقشهٔ دشت" title="نقشهٔ دشت">نقشه</button>
       <button id="flight-ascend-btn" class="glass flight-altitude-btn" aria-label="افزایش ارتفاع پرواز" hidden>▲ اوج</button>
       <button id="flight-descend-btn" class="glass flight-altitude-btn" aria-label="کاهش ارتفاع پرواز" hidden>▼ فرود</button>
       <button id="camera-view" class="glass" aria-pressed="false" aria-label="تغییر نمای دوربین">نمای باز</button>
@@ -125,9 +129,16 @@ const placementMarker = $('placement-preview');
 let reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const keys = new Set<string>();
 let target: T.Vector3 | null = null;
+let walkingWaypoints: T.Vector3[] = [];
 let nearestCompanion = false;
 let activeDialogReturn: HTMLElement | null = null;
+let activeLandMap: LandMapHandle | null = null;
 let wideView = false;
+
+function clearMovementTarget() {
+  target = null;
+  walkingWaypoints = [];
+}
 let zoom = 1;
 let elapsed = 0;
 let socialBeat = 0;
@@ -248,13 +259,15 @@ function setStatus(message: string) { status.textContent = message; }
 
 function closeDialog() {
   overlay.hidden = true;
+  activeLandMap?.destroy();
+  activeLandMap = null;
   overlay.replaceChildren();
   keys.clear();
   activeDialogReturn?.focus();
   activeDialogReturn = null;
 }
 function dialog(title: string, body = '', actions = '', returnFocus?: HTMLElement) {
-  target = null;
+  clearMovementTarget();
   keys.clear();
   activeDialogReturn = returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   overlay.hidden = false;
@@ -304,6 +317,26 @@ const districtWorld = createWorld(scene);
 const fauna = createFaunaMeshGroup(scene);
 const cameraFocus = new T.Vector3(-2, 0, 14);
 const worldBounds = () => districtWorld.bounds();
+const mapLandmarks: LandMapLandmark[] = Object.entries(districts).map(([id, place]) => ({
+  id,
+  name: place.name,
+  x: place.x,
+  z: place.z,
+  icon: place.icon,
+  color: place.color,
+  description: place.subtitle,
+}));
+
+function planLandmarkWalk(landmark: LandMapLandmark): T.Vector3[] | null {
+  const route = planWalkableRoute(
+    { x: angel.position.x, z: angel.position.z },
+    { x: landmark.x, z: landmark.z },
+    worldBounds(),
+    districtWorld.obstacles,
+  );
+  return route?.map(point => new T.Vector3(point.x, 0, point.z)) ?? null;
+}
+
 const ambienceTarget = new T.Color('#a4cfb6');
 const skyColorTarget = new T.Color();
 const fogColorTarget = new T.Color();
@@ -492,6 +525,12 @@ scene.add(angel);
 const gor = character(false);
 gor.position.set(-2.25, 0, 14.3);
 scene.add(gor);
+const landmarkArrivals = createLandmarkArrivalTracker(mapLandmarks.map(landmark => ({
+  id: landmark.id,
+  x: landmark.x,
+  z: landmark.z,
+  radius: 8,
+})));
 
 const fx = createVisualFXSystem(scene, { camera, reducedMotion });
 if (typeof window !== 'undefined' && window.matchMedia) {
@@ -552,7 +591,7 @@ const ownGarden = createGarden(
       queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار گل تازه مکث کرد.', 1.2);
     } else if (next.essence > previous.essence) setStatus('گل برداشت شد.');
   },
-  () => { target = null; keys.clear(); cancelCompanionMoments(); },
+  () => { clearMovementTarget(); keys.clear(); cancelCompanionMoments(); },
   () => { keys.clear(); },
   () => { ownGarden.close(); openBuild(); },
 );
@@ -742,7 +781,7 @@ for (const button of buildPalette.querySelectorAll<HTMLButtonElement>('[data-kin
 function openBuild() {
   cancelCompanionMoments();
   markPlayerActive();
-  target = null;
+  clearMovementTarget();
   keys.clear();
   if (overlay.hidden === false) closeDialog();
   if (ownGarden.editing) ownGarden.close();
@@ -1117,6 +1156,33 @@ $('camera-view').onclick = () => {
   document.querySelector('main')!.dataset.camera = wideView ? 'wide' : 'close';
 };
 
+function openLandMap() {
+  if (building) setBuilding(false);
+  dialog('نقشهٔ دشت', '<div id="land-map-mount"></div>', '', $('map-action'));
+  activeLandMap = renderLandMap(
+    $('land-map-mount'),
+    mapLandmarks,
+    landmark => {
+      const route = planLandmarkWalk(landmark);
+      if (!route) {
+        setStatus('برای این مکان مسیر امنی پیدا نشد.');
+        return;
+      }
+      closeDialog();
+      walkingWaypoints = route.slice(1);
+      target = route[0] ?? null;
+      setStatus(route.length ? `در راه ${landmark.name}.` : `اینجا هستی: ${landmark.name}.`);
+    },
+    {
+      selectedId: null,
+      playerPosition: { x: angel.position.x, z: angel.position.z },
+      label: 'مکان‌های دشت',
+      worldBounds: { minX: -31, maxX: 33, minZ: -38, maxZ: 28 },
+    },
+  );
+}
+$('map-action').onclick = openLandMap;
+
 const raycaster = new T.Raycaster();
 const pointer = new T.Vector2();
 let pointerStart = { x: 0, y: 0 };
@@ -1307,6 +1373,7 @@ renderer.domElement.addEventListener('pointerup', event => {
   if (!hit) return;
   cancelCompanionMoments();
   markPlayerActive();
+  clearMovementTarget();
   target = hit.point.clone();
   target.y = planetElevation(target.x, target.z);
   const bounds = worldBounds();
@@ -1393,7 +1460,7 @@ window.addEventListener('keydown', event => {
     cancelCompanionMoments();
     markPlayerActive();
     keys.add(event.key);
-    target = null;
+    clearMovementTarget();
   }
   if (key === 'e' && nearestCompanion) $('interact').click();
   if (event.key === 'Escape' && ownGarden.editing) ownGarden.close();
@@ -1436,8 +1503,15 @@ function animate() {
   if (overlay.hidden && !ownGarden.editing) {
     if (target) {
       movement.copy(target).sub(angel.position).setY(0);
-      if (movement.length() < .2) { target = null; movement.set(0, 0, 0); }
-      else movement.normalize();
+      if (movement.length() < .2) {
+        target = null;
+        while (walkingWaypoints.length && !target) {
+          const next = walkingWaypoints.shift()!;
+          if (Math.hypot(next.x - angel.position.x, next.z - angel.position.z) >= .2) target = next;
+        }
+        if (target) movement.copy(target).sub(angel.position).setY(0).normalize();
+        else movement.set(0, 0, 0);
+      } else movement.normalize();
     } else {
       const x = Number(keys.has('d') || keys.has('ArrowRight')) - Number(keys.has('a') || keys.has('ArrowLeft'));
       const z = Number(keys.has('s') || keys.has('ArrowDown')) - Number(keys.has('w') || keys.has('ArrowUp'));
@@ -1573,6 +1647,11 @@ function animate() {
     }
   }
 
+  const landmarkArrival = landmarkArrivals.update(angel.position.x, angel.position.z, elapsed);
+  if (landmarkArrival) {
+    const place = districts[landmarkArrival.id as keyof typeof districts];
+    setStatus(`رسیدی به ${place?.name ?? 'یک گوشهٔ تازه از دشت'}.`);
+  }
   // Idle awareness timer
   updateCompanionIdleAwareness(now);
 

@@ -34,6 +34,29 @@ test('a saved wooden bridge removes the covered river circle from movement block
   );
 });
 
+test('map anchors stay fixed and the grove spirit-tree heart reads as a landmark', () => {
+  const world = createWorld(new THREE.Scene());
+  const mapAnchors = {
+    garden: [-2, 14], greenhouse: [20, 14], home: [-22, -10],
+    village: [24, -13], grove: [-21, 19], sanctuary: [0, -29],
+  } as const;
+
+  for (const [id, [x, z]] of Object.entries(mapAnchors) as [keyof typeof mapAnchors, readonly [number, number]][]) {
+    const root = world.root(id);
+    assert.equal(root.position.x, x, `${id} x map anchor should stay fixed`);
+    assert.equal(root.position.z, z, `${id} z map anchor should stay fixed`);
+  }
+
+  const elderNook = world.root('grove').getObjectByName('spirit-tree-resting-nook');
+  assert.ok(elderNook, 'the spirit tree resting nook should remain in the grove');
+  const heart = elderNook.getObjectByName('spirit-tree-heart') as THREE.Mesh | undefined;
+  const ring = elderNook.getObjectByName('spirit-tree-heart-ring') as THREE.Mesh | undefined;
+  assert.ok(heart?.isMesh, 'the heart should remain a separate visible mesh');
+  assert.ok(ring?.isMesh, 'the heart should retain its separate glowing ring');
+  assert.ok(ring.scale.x >= 0.86, 'the ring should frame the heart clearly from the grove clearing');
+  assert.ok((heart.material as THREE.MeshStandardMaterial).emissiveIntensity >= 0.82, 'the heart should stay bright enough to spot among the canopy');
+});
+
 test('fixed bridge endpoints stay clear of overlapping river collision circles', () => {
   const world = createWorld(new THREE.Scene());
   world.sync(initialState());

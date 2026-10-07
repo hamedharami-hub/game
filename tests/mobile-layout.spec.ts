@@ -6,7 +6,7 @@ const expectNoHorizontalOverflow = async (page: import('@playwright/test').Page)
 };
 
 test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
-  test('390px mobile viewport: four primary header actions fit on row 1 and flight works from companions', async ({ page }) => {
+  test('390px mobile viewport: five primary header actions fit on row 1 and flight works from companions', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const errors: string[] = [];
     page.on('pageerror', err => errors.push(err.message));
@@ -26,11 +26,12 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
     const titleText = page.locator('.brand > span:not(.brand-mark)');
     await expect(titleText).toBeHidden();
 
-    // Verify the four primary actions, including the camera-view control.
+    // Verify the five primary actions, including map and camera.
     const buttons = [
       '#plant-action',
       '#build-action',
       '#people-action',
+      '#map-action',
       '#camera-view',
     ];
 
@@ -68,6 +69,13 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
     await expect(page.locator('#flight-ascend-btn')).toBeVisible();
     await expect(page.locator('#flight-descend-btn')).toBeVisible();
     await expectNoHorizontalOverflow(page);
+    for (const id of ['#plant-action', '#build-action', '#people-action', '#map-action', '#flight-ascend-btn', '#flight-descend-btn', '#camera-view']) {
+      const box = await page.locator(id).boundingBox();
+      expect(box, `${id} should remain visible while flying`).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+      expect(box!.y).toBeLessThan(40);
+    }
 
     await page.locator('#people-action').click();
     const landButton = page.locator('[data-social="fly"]');
@@ -129,12 +137,62 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       await expect(page.locator('canvas')).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      for (const id of ['#plant-action', '#build-action', '#people-action', '#camera-view']) {
+      for (const id of ['#plant-action', '#build-action', '#people-action', '#map-action', '#camera-view']) {
         await expect(page.locator(id)).toBeVisible();
         const box = await page.locator(id).boundingBox();
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       }
     }
+  });
+
+  test('map shows one connected meadow, six places and player marker; Escape restores focus', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/?profile=mobile-map-accessibility');
+
+    const mapButton = page.locator('#map-action');
+    await mapButton.click();
+    const dialog = page.locator('#overlay .dialog');
+    await expect(dialog).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expect(page.locator('#land-map-mount .land-map__land')).toHaveCount(1);
+    await expect(page.locator('#land-map-mount .land-map__marker')).toHaveCount(6);
+    await expect(page.locator('#land-map-mount .land-map__button')).toHaveCount(6);
+    await expect(page.locator('#land-map-mount [data-player-marker="true"]')).toHaveAttribute('aria-label', /موقعیت بازیکن/);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#overlay')).toBeHidden();
+    await expect(mapButton).toBeFocused();
+
+    for (const width of [360, 375, 412, 430]) {
+      await page.setViewportSize({ width, height: 800 });
+      await mapButton.click();
+      await expectNoHorizontalOverflow(page);
+      const mapDialogBox = await dialog.boundingBox();
+      expect(mapDialogBox).not.toBeNull();
+      expect(mapDialogBox!.x).toBeGreaterThanOrEqual(0);
+      expect(mapDialogBox!.x + mapDialogBox!.width).toBeLessThanOrEqual(width);
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#overlay')).toBeHidden();
+      await expect(mapButton).toBeFocused();
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test('choosing a map landmark starts a walk and the arrival cue follows movement', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/?profile=mobile-map-route');
+    await page.locator('#map-action').click();
+    await expect(page.locator('#land-map-mount .land-map__button')).toHaveCount(6);
+    await page.locator('#land-map-mount .land-map__button[data-landmark-id="greenhouse"]').click();
+
+    await expect(page.locator('#overlay')).toBeHidden();
+    await expect(page.locator('#ambient-status')).toHaveText('در راه گلخانهٔ پیوند.');
+    await expect(page.locator('#ambient-status')).toHaveText('رسیدی به گلخانهٔ پیوند.', { timeout: 9000 });
+    expect(errors).toEqual([]);
   });
 
   test('390px free-build tray stays reachable by touch and keyboard', async ({ page }) => {

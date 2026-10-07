@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  planetElevation,
   calculateSideBySideOffset,
   calculateFlightAltitude,
   calculateCameraFocusY,
@@ -84,6 +85,12 @@ test('calculateSideBySideOffset handles zero-vector and NaN heading gracefully w
   const nanOffset = calculateSideBySideOffset({ x: NaN, z: NaN }, 0.90);
   assert.ok(Number.isFinite(nanOffset.x));
   assert.ok(Number.isFinite(nanOffset.z));
+});
+
+test('planetElevation stays finite for very large finite coordinates', () => {
+  assert.equal(planetElevation(1e156, 0), -Number.MAX_VALUE);
+  assert.ok(Number.isFinite(planetElevation(1e155, 0)));
+  assert.equal(planetElevation(Number.MAX_VALUE, Number.MAX_VALUE), -Number.MAX_VALUE);
 });
 
 // ============================================================================
@@ -293,6 +300,16 @@ test('computeHandPositions handles co-located characters without NaN', () => {
   assert.ok(Number.isFinite(gorHand.x) && Number.isFinite(gorHand.y) && Number.isFinite(gorHand.z));
 });
 
+test('computeHandPositions keeps its direction finite when coordinate subtraction overflows', () => {
+  const { angelHand, gorHand } = computeHandPositions(
+    { x: -Number.MAX_VALUE, y: 0, z: 0 },
+    { x: Number.MAX_VALUE, y: 0, z: 0 },
+  );
+  for (const value of [angelHand.x, angelHand.y, angelHand.z, gorHand.x, gorHand.y, gorHand.z]) {
+    assert.ok(Number.isFinite(value));
+  }
+});
+
 test('isHandHoldDetached detects separation distance exceeding break threshold', () => {
   assert.equal(isHandHoldDetached(1.0), false);
   assert.equal(isHandHoldDetached(4.1), false);
@@ -336,6 +353,17 @@ test('toggleHandHolding is blocked while airborne in flight mode', () => {
   assert.equal(sAttempt.isHandHolding, false);
 });
 
+test('toggleHandHolding rejects invalid distances and flight releases a held hand', () => {
+  const ground = createTraversalState();
+  assert.equal(toggleHandHolding(ground, -1), ground);
+  assert.equal(toggleHandHolding(ground, NaN), ground);
+
+  const holding = toggleHandHolding(ground, 1.0);
+  const takeoff = toggleFlight(holding);
+  assert.equal(takeoff.isHandHolding, false);
+  assert.equal(takeoff.mode, 'soaring');
+});
+
 test('toggleFlight transitions between takeoff and landing states', () => {
   const s0 = createTraversalState();
   const sTakeoff = toggleFlight(s0, 4.0);
@@ -347,6 +375,13 @@ test('toggleFlight transitions between takeoff and landing states', () => {
   const sLanding = toggleFlight(sTakeoff);
   assert.equal(sLanding.flightState, 'descending');
   assert.equal(sLanding.targetAltitude, 0);
+});
+
+test('toggleFlight keeps requested altitude finite and within flight limits', () => {
+  const ground = createTraversalState();
+  assert.equal(toggleFlight(ground, NaN).targetAltitude, CRUISE_ALTITUDE);
+  assert.equal(toggleFlight(ground, -10).targetAltitude, MIN_FLIGHT_ALTITUDE);
+  assert.equal(toggleFlight(ground, 100).targetAltitude, MAX_FLIGHT_ALTITUDE);
 });
 
 test('INTIMACY_ACTIONS defines all 6 Persian couple interaction descriptors with proper metadata', () => {
@@ -474,6 +509,10 @@ test('resolveObstacleCollision pushes character out of obstacle radius smoothly'
   assert.equal(emptyRes.collided, false);
   assert.equal(emptyRes.x, 1.0);
   assert.equal(emptyRes.z, 2.0);
+
+  const negativeRadius = resolveObstacleCollision({ x: 0, z: 0 }, 0.4, [{ x: 0, z: 0, radius: -2 }]);
+  assert.equal(negativeRadius.collided, true);
+  assert.ok(Math.abs(negativeRadius.x - 0.4) < 1e-4);
 });
 
 test('placement projection preserves free points and clamps object footprints to a circular edge', () => {
@@ -485,6 +524,7 @@ test('placement projection preserves free points and clamps object footprints to
   assert.equal(edge.z, -3);
   assert.ok(isFootprintInsideLand(edge, 2, land));
   assert.equal(isFootprintInsideLand({ x: 13, z: -3 }, 2, land), false);
+  assert.equal(isFootprintInsideLand({ x: 4, z: -3 }, Number.POSITIVE_INFINITY, land), false);
   assert.deepEqual(projectPointToLand({ x: NaN, z: Infinity }, land, 1), { x: 4, z: -3 });
   assert.deepEqual(projectPointToLand({ x: 50, z: 50 }, land, 99), { x: 4, z: -3 });
 });
@@ -519,5 +559,7 @@ test('placement collision checks use circular footprints with optional clearance
   assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [tree, pond]), true);
   assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [tree], 0.2), false);
   assert.equal(isPlacementClear({ x: 0, z: 0 }, 1, [{ x: NaN, z: 0, radius: 2 }]), true);
+  assert.equal(isPlacementClear({ x: 0, z: 0 }, Number.NaN, []), false);
+  assert.equal(isPlacementClear({ x: 0, z: 0 }, Number.POSITIVE_INFINITY, []), false);
   assert.equal(isPlacementClear({ x: Infinity, z: 0 }, 1, []), false);
 });

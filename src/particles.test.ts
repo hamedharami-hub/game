@@ -500,6 +500,33 @@ test('6.2: intermediate catenary/bezier curve points generate valid geometry wit
   }
 });
 
+test('6.3: connection beam normalizes its shared tangent once per frame', () => {
+  const scene = new T.Scene();
+  const fx = createVisualFXSystem(scene);
+  fx.setHandHoldConnection(new T.Vector3(-1, 1, 0), new T.Vector3(1, 1, 0), true);
+
+  const originalHypot = Math.hypot;
+  let hypotCalls = 0;
+  try {
+    Math.hypot = (...values: number[]) => {
+      hypotCalls++;
+      return originalHypot(...values);
+    };
+    fx.update(0.016, 500);
+  } finally {
+    Math.hypot = originalHypot;
+  }
+
+  // One shared endpoint tangent plus camera and side-vector lengths for all 17 samples.
+  assert.strictEqual(hypotCalls, 1 + 17 * 2);
+  const colorArray = fx.connectionMesh!.geometry.getAttribute('color').array as Float32Array;
+  for (let vertex = 1; vertex < 34; vertex++) {
+    assert.strictEqual(colorArray[vertex * 4 + 1], colorArray[1], 'Beam green pulse is shared by all vertices');
+    assert.strictEqual(colorArray[vertex * 4 + 2], colorArray[2], 'Beam blue pulse is shared by all vertices');
+  }
+  fx.dispose!();
+});
+
 // =========================================================================
 // Suite 7: Prefers-Reduced-Motion Compliance
 // =========================================================================

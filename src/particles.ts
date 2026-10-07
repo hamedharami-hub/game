@@ -787,6 +787,18 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
         const beamPosArr = connGeom.getAttribute('position').array as Float32Array;
         const beamColArr = connGeom.getAttribute('color').array as Float32Array;
 
+        // The endpoint direction and these pulses are shared by every beam
+        // section, so calculate them once per frame instead of inside the loop.
+        let tx = handGor.x - handAngel.x;
+        let ty = handGor.y - handAngel.y;
+        let tz = handGor.z - handAngel.z;
+        const tLen = Math.hypot(tx, ty, tz);
+        if (tLen > 1e-4) { tx /= tLen; ty /= tLen; tz /= tLen; } else { tx = 1; ty = 0; tz = 0; }
+
+        const wPulse = reducedMotion ? 1.0 : 1.0 + 0.15 * Math.sin(tSec * 6.0);
+        const beamG = reducedMotion ? 0.90 : Math.max(0.0, Math.min(1.0, 0.88 + 0.08 * Math.sin(tSec * 4.0)));
+        const beamB = reducedMotion ? 0.65 : Math.max(0.0, Math.min(1.0, 0.60 + 0.15 * Math.cos(tSec * 3.0)));
+
         for (let s = 0; s <= BEAM_SEGMENTS; s++) {
           const u = s / BEAM_SEGMENTS;
           const bx = (1.0 - u) * handAngel.x + u * handGor.x;
@@ -801,12 +813,6 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
           const cy = by + sag + dy;
           const cz = bz;
 
-          let tx = handGor.x - handAngel.x;
-          let ty = handGor.y - handAngel.y;
-          let tz = handGor.z - handAngel.z;
-          const tLen = Math.hypot(tx, ty, tz);
-          if (tLen > 1e-4) { tx /= tLen; ty /= tLen; tz /= tLen; } else { tx = 1; ty = 0; tz = 0; }
-
           let dcx = tempCam.x - cx;
           let dcy = tempCam.y - cy;
           let dcz = tempCam.z - cz;
@@ -819,7 +825,6 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
           let sLen = Math.hypot(sx, sy, sz);
           if (sLen > 1e-4) { sx /= sLen; sy /= sLen; sz /= sLen; } else { sx = 0; sy = 1; sz = 0; }
 
-          const wPulse = reducedMotion ? 1.0 : 1.0 + 0.15 * Math.sin(tSec * 6.0);
           const w = (0.06 + 0.10 * Math.sin(u * Math.PI)) * wPulse;
           const hw = w * 0.5;
 
@@ -834,21 +839,19 @@ export function createVisualFXSystem(scene: T.Scene, options?: VisualFXOptions):
           beamPosArr[rightAt + 2] = cz - sz * hw;
 
           const r = 1.0;
-          const g = reducedMotion ? 0.90 : Math.max(0.0, Math.min(1.0, 0.88 + 0.08 * Math.sin(tSec * 4.0)));
-          const b = reducedMotion ? 0.65 : Math.max(0.0, Math.min(1.0, 0.60 + 0.15 * Math.cos(tSec * 3.0)));
           const alphaPulse = reducedMotion ? 0.85 : 0.75 + 0.25 * Math.sin(tSec * 7.0 + u * 4.0);
           const alpha = connAlpha * Math.pow(Math.max(0.0, Math.sin(u * Math.PI)), 0.35) * alphaPulse;
 
           const colLeftAt = 2 * s * 4;
           beamColArr[colLeftAt]     = r;
-          beamColArr[colLeftAt + 1] = g;
-          beamColArr[colLeftAt + 2] = b;
+          beamColArr[colLeftAt + 1] = beamG;
+          beamColArr[colLeftAt + 2] = beamB;
           beamColArr[colLeftAt + 3] = alpha;
 
           const colRightAt = (2 * s + 1) * 4;
           beamColArr[colRightAt]     = r;
-          beamColArr[colRightAt + 1] = g;
-          beamColArr[colRightAt + 2] = b;
+          beamColArr[colRightAt + 1] = beamG;
+          beamColArr[colRightAt + 2] = beamB;
           beamColArr[colRightAt + 3] = alpha;
         }
         connGeom.attributes.position.needsUpdate = true;

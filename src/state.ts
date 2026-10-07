@@ -1,4 +1,5 @@
 export const SAVE_KEY = 'dream-caravan:garden:v1';
+const plantIdPattern = /^[a-z0-9-]{1,64}$/i;
 export const resources = ['seed', 'crystal', 'feather'] as const;
 export type Resource = typeof resources[number];
 export type Invention = 'lantern' | 'sprout';
@@ -15,7 +16,7 @@ export function decodeSave(raw: string | null): State {
     const plotLevel = 5;
     const plants: Plant[] = [];
     for(const p of Array.isArray(s.plants)?s.plants:[]){
-      if(!p||typeof p.id!=='string'||!/^[a-z0-9-]{1,64}$/i.test(p.id)||!Object.hasOwn(species,p.species)||!cellUnlocked(plotLevel,p.col,p.row)||![p.plantedAt,p.boostMs,p.lastWaterAt].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0)||plants.some(q=>q.id===p.id||q.col===p.col&&q.row===p.row))continue;
+      if(!p||typeof p.id!=='string'||!plantIdPattern.test(p.id)||!Object.hasOwn(species,p.species)||!cellUnlocked(plotLevel,p.col,p.row)||![p.plantedAt,p.boostMs,p.lastWaterAt].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0)||plants.some(q=>q.id===p.id||q.col===p.col&&q.row===p.row))continue;
       plants.push({id:p.id,species:p.species,col:p.col,row:p.row,plantedAt:p.plantedAt,boostMs:Math.min(p.boostMs,species[p.species as Species].minutes*60000),lastWaterAt:p.lastWaterAt,lastHarvestAt:typeof p.lastHarvestAt==='number'&&Number.isFinite(p.lastHarvestAt)&&p.lastHarvestAt>=0?p.lastHarvestAt:null});
     }
     return { version: 1, collected, invention, restored: Boolean(s.restored && invention), plotLevel, plants,
@@ -54,7 +55,7 @@ export function growthDurationMs(p: Plant) {
 export function growthStage(p: Plant, now = Date.now()): number { const progress = Math.max(0, now-p.plantedAt) + p.boostMs; return Math.min(3, Math.floor(progress / (growthDurationMs(p)/3))); }
 export function growRemaining(p: Plant, now = Date.now()) { return Math.max(0, growthDurationMs(p) - Math.max(0,now-p.plantedAt) - p.boostMs); }
 export function plantAt(s: State, kind: Species, col: number, row: number, now: number, id: string): State {
-  if (!species[kind] || !cellUnlocked(s.plotLevel,col,row) || s.plants.some(p=>p.col===col&&p.row===row||p.id===id) || !Number.isFinite(now) || now<0) return s;
+  if (!Object.hasOwn(species,kind) || typeof id!=='string' || !plantIdPattern.test(id) || !cellUnlocked(s.plotLevel,col,row) || s.plants.some(p=>p.col===col&&p.row===row||p.id===id) || !Number.isFinite(now) || now<0) return s;
   return {...s,plants:[...s.plants,{id,species:kind,col,row,plantedAt:now,boostMs:0,lastWaterAt:0,lastHarvestAt:null}]};
 }
 export function movePlant(s: State, id: string, col: number, row: number): State {

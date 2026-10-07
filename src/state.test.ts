@@ -56,6 +56,17 @@ test('planting and relocation stay free, bounded, and preserve plant age', () =>
   assert.deepEqual(decodeSave(JSON.stringify(state)), state);
 });
 
+test('planting accepts only species and ids that survive v1 save decoding', () => {
+  const state = initialState();
+  for (const id of ['', 'bad id', 'x'.repeat(65)]) {
+    assert.equal(plantAt(state, 'moonflower', 2, 2, 1_000, id), state);
+  }
+  assert.equal(plantAt(state, 'toString' as keyof typeof species, 2, 2, 1_000, 'valid-id'), state);
+
+  const planted = plantAt(state, 'moonflower', 2, 2, 1_000, 'plant-1');
+  assert.deepEqual(decodeSave(JSON.stringify(planted)), planted);
+});
+
 test('harvesting keeps saved essence and starts another short growth cycle', () => {
   let state = plantAt({ ...initialState(), essence: 7 }, 'moonflower', 2, 2, 1_000, 'p1');
   const firstBloomAt = 1_000 + Math.ceil(growthDurationMs(state.plants[0]));

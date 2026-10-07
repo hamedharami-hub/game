@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — One-map wandering and quality fixes
+- Added one small, keyboard/touch accessible map for the six existing landmarks and a live player marker. Selecting a landmark walks to a nearby safe point; the map never teleports the player or changes scenes.
+- Added low-cost 2D route planning around world colliders, brief arrival cues, and route checks that prove every named landmark is reachable from the starting garden.
+- Made the spirit tree's heart and ring easier to see without adding meshes or draw calls.
+- Reused beam tangent and pulse calculations once per frame instead of once per sampled segment; added plant ID/species and numeric-boundary guards for older v1 saves and interactions.
+- Kept the current v1 save shape and all existing map anchors. Updated the production JavaScript budget for the measured map and navigation additions with explicit headroom.
+
 ## Unreleased — Waterfall, spirit tree and free landscape building
 - Enriched the shared Two-Horn land with a wider, softly luminous winding river, a short waterfall with moving glints, and a spirit tree with a glowing heart and drifting lights. The grove remains part of the same walkable landscape.
 - Opened a broad grove clearing around the river and spirit tree so the landmark reads clearly in the wide landscape view.

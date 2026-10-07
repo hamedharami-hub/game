@@ -1,4 +1,19 @@
-# Latest validation — 2026-10-06 · Free Two-Horn landscape
+# Latest validation — 2026-10-07 · Single-map wandering and quality pass
+
+This update adds a compact 2D overview of the six existing places, a player marker, safe walking routes to nearby landmark approaches, and short area-name cues. The overview uses the existing one-world coordinates; selecting a place does not teleport, switch scenes, or write to saves. Reliability fixes reject plant IDs/species that cannot survive the existing v1 decoder and guard numeric edge cases in interactions. The spirit tree's existing heart and ring are easier to see without extra meshes.
+
+| Check | Result |
+| --- | --- |
+| `npm test` | 158 passed, 0 failed/skipped |
+| `npm run build` | Passed: artwork verification, TypeScript, standalone export and all 6 budget checks |
+| `npx playwright test` | 18 passed, 0 failed/skipped |
+| Map checks after final projection adjustment | 2 passed: one connected land area, six labels/markers, live player marker, keyboard/Escape focus return, mobile widths 360–430px, and walking arrival at the selected place |
+| Navigation coverage | All six existing landmarks have an obstacle-safe route from the starting garden |
+| `git diff --check` | Passed |
+
+The production JavaScript measures 657,085 B raw / 182,319 B gzip against the updated 660,000 B / 185,000 B gate. The gate retains 2,915 B raw and 2,681 B gzip headroom. Vite still reports its existing 500 kB advisory; the old single world was already above that advisory. `dist/` is 26,804,693 B and standalone `release/play.html` is 13,563,584 B with 21 embedded images and no raw `/art/` references. Browser rendering used Chromium SwiftShader; this does not measure physical-phone frame rate.
+
+## Previous validation — 2026-10-06 · Free Two-Horn landscape
 
 This update expands the existing single world with a more open grove, a clearer luminous river and waterfall, a spirit tree, and free landscape building. Saved placements can be moved, turned, and removed; the live planting garden keeps all plant records and remains one movable garden.
 
