@@ -7,13 +7,18 @@ import {
   initialState, decodeSave, storageKey, growthStage, species, setAppearance, hairColors, outfits,
   placeLandscapePlacement, moveLandscapePlacement, removeLandscapePlacement,
   landscapeFootprintRadii, landscapeKinds, LANDSCAPE_PLACEMENT_CLEARANCE,
-  type LandscapeKind, type LandscapePlacement, type HairColor, type Outfit,
+  type District, type LandscapeKind, type LandscapePlacement, type HairColor, type Outfit,
 } from './state';
 import type { State } from './state';
 import { lookAssets, diagonalAssets } from './appearance';
 import { createWorld, districts } from './world';
 import { renderLandMap, type LandMapHandle, type LandMapLandmark } from './land-map';
 import { createLandmarkArrivalTracker } from './exploration';
+import { landmarkMood } from './landmark-mood';
+import {
+  readGraphicsQualityPreference, resolveGraphicsQuality,
+  type GraphicsQuality, type GraphicsQualityPreference,
+} from './graphics-quality';
 import { planWalkableRoute } from './navigation';
 import { createAudioEngine, type AudioEngine } from './audio';
 import { createVisualFXSystem, computeNightIntensity, calculateShadowParams, type VisualFXSystem } from './particles';
@@ -51,11 +56,16 @@ if (typeof window !== 'undefined') {
 }
 
 const gameSaveKey = storageKey(new URLSearchParams(location.search).get('profile'));
+const graphicsPreferenceKey = `${gameSaveKey}:graphics-quality:v1`;
+const nav = navigator as Navigator & { deviceMemory?: unknown };
+const graphicsCapabilities = { deviceMemory: nav.deviceMemory, hardwareConcurrency: nav.hardwareConcurrency };
+let graphicsPreference: GraphicsQualityPreference = readGraphicsQualityPreference(() => localStorage.getItem(graphicsPreferenceKey));
+let graphicsQuality: GraphicsQuality = resolveGraphicsQuality(graphicsPreference, graphicsCapabilities);
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `<main data-phase="morning" data-weather="clear">
   <div id="world" aria-label="سرزمین زندهٔ دوشاخ‌ها"></div>
   <header class="hud">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>سرزمین دوشاخ‌ها<small>خانهٔ زندهٔ ما</small></span></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>سرزمین دوشاخ‌ها<small>خانهٔ زندهٔ ما</small></span><button id="graphics-action" class="brand-settings" aria-label="تنظیمات تصویر">⚙</button></div>
   <nav class="action-bar" aria-label="کارهای دشت">
     <button id="plant-action" class="glass" aria-label="کاشت گل">کاشت</button>
       <button id="build-action" class="glass" aria-label="ساخت‌وساز آزاد" aria-pressed="false">ساخت آزاد</button>
@@ -290,10 +300,10 @@ try {
   $('world').innerHTML = '<div class="fallback glass"><h2>نمای سه‌بعدی در دسترس نیست</h2><p>بازی را با مرورگری با پشتیبانی WebGL باز کن.</p></div>';
   throw new Error('WebGL unavailable');
 }
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
-renderer.shadowMap.enabled = true;
+renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.6));
+renderer.shadowMap.enabled = graphicsQuality === 'high';
 renderer.shadowMap.autoUpdate = false;
-renderer.shadowMap.needsUpdate = true;
+renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
 renderer.shadowMap.type = T.PCFSoftShadowMap;
 renderer.outputColorSpace = T.SRGBColorSpace;
 renderer.toneMapping = T.ACESFilmicToneMapping;
@@ -326,6 +336,29 @@ const mapLandmarks: LandMapLandmark[] = Object.entries(districts).map(([id, plac
   color: place.color,
   description: place.subtitle,
 }));
+const moodLandmarkIds = Object.keys(districts) as District[];
+const moodPalettes = new Map<District, readonly [T.Color, T.Color]>();
+for (const id of moodLandmarkIds) {
+  const [base, accent] = landmarkMood(id);
+  moodPalettes.set(id, [new T.Color(base), new T.Color(accent)]);
+}
+let activeMoodPlace: District | null = 'garden';
+
+function updatePlaceMood(x: number, z: number) {
+  let nearest: District | null = null;
+  let nearestDistanceSquared = 18 * 18;
+  for (const id of moodLandmarkIds) {
+    const place = districts[id];
+    const dx = x - place.x;
+    const dz = z - place.z;
+    const distanceSquared = dx * dx + dz * dz;
+    if (distanceSquared < nearestDistanceSquared) {
+      nearest = id;
+      nearestDistanceSquared = distanceSquared;
+    }
+  }
+  activeMoodPlace = nearest;
+}
 
 function planLandmarkWalk(landmark: LandMapLandmark): T.Vector3[] | null {
   const route = planWalkableRoute(
@@ -1156,6 +1189,42 @@ $('camera-view').onclick = () => {
   document.querySelector('main')!.dataset.camera = wideView ? 'wide' : 'close';
 };
 
+function applyGraphicsQuality() {
+  graphicsQuality = resolveGraphicsQuality(graphicsPreference, graphicsCapabilities);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.6));
+  renderer.shadowMap.enabled = graphicsQuality === 'high';
+  renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
+  resize();
+}
+
+function openGraphicsSettings() {
+  dialog(
+    'تنظیمات تصویر',
+    `<div class="graphics-settings">
+      <label class="graphics-toggle" for="graphics-quality-toggle">
+        <input id="graphics-quality-toggle" type="checkbox" ${graphicsPreference === 'low' ? 'checked' : ''}>
+        <span>حالت کم‌مصرف</span>
+      </label>
+      <p>حالت کم‌مصرف وضوح تصویر و سایه‌ها را کاهش می‌دهد.</p>
+      <p id="graphics-quality-status" role="status" aria-live="polite"></p>
+    </div>`,
+    '',
+    $('graphics-action'),
+  );
+  const toggle = $<HTMLInputElement>('graphics-quality-toggle');
+  const qualityStatus = $('graphics-quality-status');
+  const updateStatus = () => { qualityStatus.textContent = graphicsQuality === 'low' ? 'کم‌مصرف فعال است.' : 'کیفیت بالا فعال است.'; };
+  toggle.onchange = () => {
+    graphicsPreference = toggle.checked ? 'low' : 'auto';
+    try { localStorage.setItem(graphicsPreferenceKey, graphicsPreference); } catch { /* Settings remain active until this page closes. */ }
+    applyGraphicsQuality();
+    updateStatus();
+  };
+  updateStatus();
+  toggle.focus();
+}
+$('graphics-action').onclick = openGraphicsSettings;
+
 function openLandMap() {
   if (building) setBuilding(false);
   dialog('نقشهٔ دشت', '<div id="land-map-mount"></div>', '', $('map-action'));
@@ -1648,6 +1717,7 @@ function animate() {
   }
 
   const landmarkArrival = landmarkArrivals.update(angel.position.x, angel.position.z, elapsed);
+  updatePlaceMood(angel.position.x, angel.position.z);
   if (landmarkArrival) {
     const place = districts[landmarkArrival.id as keyof typeof districts];
     setStatus(`رسیدی به ${place?.name ?? 'یک گوشهٔ تازه از دشت'}.`);
@@ -1823,8 +1893,15 @@ function animate() {
     skyColorTarget.set(atmosphere.skyColor).lerp(ambienceTarget, .14);
     fogColorTarget.set(atmosphere.fogColor);
     hemisphereColorTarget.set(atmosphere.hemisphereColor);
-    groundHemisphereColorTarget.copy(hemisphereColorTarget).lerp(groundHemisphereBase, .42);
     sunColorTarget.set(atmosphere.sunColor);
+    const localPalette = activeMoodPlace ? moodPalettes.get(activeMoodPlace) : undefined;
+    if (localPalette) {
+      skyColorTarget.lerp(localPalette[0], .15);
+      fogColorTarget.lerp(localPalette[1], .12);
+      hemisphereColorTarget.lerp(localPalette[0], .075);
+      sunColorTarget.lerp(localPalette[1], .055);
+    }
+    groundHemisphereColorTarget.copy(hemisphereColorTarget).lerp(groundHemisphereBase, .42);
     scene.background.lerp(skyColorTarget, blend);
     if (scene.fog instanceof T.Fog) scene.fog.color.lerp(fogColorTarget, blend);
     skyLight.color.lerp(hemisphereColorTarget, blend);

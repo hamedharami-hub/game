@@ -10,6 +10,7 @@ import {
 } from './state.ts';
 import type { ObstacleCircle } from './interactions';
 import { gardenTangentEuler } from './garden-transform.ts';
+import { JUNCTION_SIGNS } from './junction-signs.ts';
 
 /** Calculates spherical planet elevation drop to produce rolling planetary horizon. */
 export function planetElevation(x: number, z: number): number {
@@ -303,6 +304,22 @@ export function createWorld(scene: T.Scene) {
     path.receiveShadow = true;
     scene.add(path);
     batch.push(edging, path);
+  }
+
+  // Light wooden arrows sit just beyond the garden-side path mouths. Their
+  // tips reuse the destination colours used by the landmark map, and their
+  // static parts join the existing batched scenery instead of adding draws.
+  for (const sign of JUNCTION_SIGNS) {
+    const destination = sign.destination;
+    const post = new T.Group();
+    post.position.set(sign.x, planetElevation(sign.x, sign.z), sign.z);
+    post.rotation.y = sign.orientation;
+    scene.add(post);
+
+    pillar('#79583f', 0, 0.68, 0, 0.07, 1.36, post);
+    box('#b28c69', 0, 1.17, 0.16, 0.14, 0.14, 0.4, post);
+    const arrowTip = shape(geometries.cone, districts[destination].color, 0, 1.17, 0.43, 0.17, 0.24, 0.17, post);
+    arrowTip.rotation.x = Math.PI / 2;
   }
 
   // Soft clearings mark places without walls or teleport pads.
