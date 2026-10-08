@@ -300,7 +300,7 @@ try {
   $('world').innerHTML = '<div class="fallback glass"><h2>نمای سه‌بعدی در دسترس نیست</h2><p>بازی را با مرورگری با پشتیبانی WebGL باز کن.</p></div>';
   throw new Error('WebGL unavailable');
 }
-renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.6));
+renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.5));
 renderer.shadowMap.enabled = graphicsQuality === 'high';
 renderer.shadowMap.autoUpdate = false;
 renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
@@ -316,7 +316,8 @@ scene.add(skyLight);
 const sun = new T.DirectionalLight(0xffe1a8, 2.35);
 sun.position.set(-14, 24, 8);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.mapSize.set(640, 640);
+sun.shadow.radius = 2.4;
 Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38 });
 scene.add(sun);
 const softFill = new T.DirectionalLight(0xc9f0e1, .55);
@@ -326,6 +327,8 @@ scene.add(softFill);
 const districtWorld = createWorld(scene);
 const fauna = createFaunaMeshGroup(scene);
 const cameraFocus = new T.Vector3(-2, 0, 14);
+const cameraLead = new T.Vector3();
+const cameraLeadTarget = new T.Vector3();
 const worldBounds = () => districtWorld.bounds();
 const mapLandmarks: LandMapLandmark[] = Object.entries(districts).map(([id, place]) => ({
   id,
@@ -1191,7 +1194,7 @@ $('camera-view').onclick = () => {
 
 function applyGraphicsQuality() {
   graphicsQuality = resolveGraphicsQuality(graphicsPreference, graphicsCapabilities);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.6));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.5));
   renderer.shadowMap.enabled = graphicsQuality === 'high';
   renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
   resize();
@@ -1756,7 +1759,10 @@ function animate() {
     ? ownGarden.focus.clone().setY(0)
     : new T.Vector3(characterMidpoint.x, calculateCameraFocusY(characterMidpoint.y, 0.82), characterMidpoint.z);
 
-  cameraFocus.lerp(focus, reducedMotion ? 1 : 1 - Math.exp(-dt * 2.5));
+  cameraFocus.lerp(focus, reducedMotion ? 1 : 1 - Math.exp(-dt * 2.2));
+  cameraLeadTarget.set(0, 0, 0);
+  if (!ownGarden.editing && movement.lengthSq() > 0.04) cameraLeadTarget.copy(movement).setY(0).multiplyScalar(0.85);
+  cameraLead.lerp(cameraLeadTarget, reducedMotion ? 1 : 1 - Math.exp(-dt * 1.5));
   if (ownGarden.editing && innerWidth < 700) camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * .18, innerWidth, innerHeight);
   else if (camera.view?.enabled) camera.clearViewOffset();
 
@@ -1765,8 +1771,8 @@ function animate() {
     ? new T.Vector3(11, 16, 15).multiplyScalar(Math.max(1, state.plotLevel / 2))
     : innerWidth < 700 ? new T.Vector3(14, 20, 23) : new T.Vector3(16, 21, 25);
   viewScale = T.MathUtils.lerp(viewScale, wideView && !ownGarden.editing ? 1.62 : 1, reducedMotion ? 1 : Math.min(1, dt * 4));
-  camera.position.copy(cameraFocus).add(offset.multiplyScalar(zoom * viewScale * horizonScale));
-  camera.lookAt(cameraFocus);
+  camera.position.copy(cameraFocus).add(cameraLead).add(offset.multiplyScalar(zoom * viewScale * horizonScale));
+  camera.lookAt(cameraFocus.x + cameraLead.x, cameraFocus.y, cameraFocus.z + cameraLead.z);
   camera.updateMatrixWorld();
 
   const isEmbracing = now < activeEmbraceStart + EMBRACE_DURATION_MS;
@@ -1812,12 +1818,12 @@ function animate() {
     ghost.scale.copy(sprite.scale);
 
     // Synchronized bobbing
-    const isWalkingTogether = handHoldingActive || (now < (gor.userData.walkTogetherUntil ?? 0));
+    const stepping = !isFlying && movement.lengthSq() > 0.04;
     const bob = isFlying
-      ? Math.sin(elapsed * 2.5 + index * 0.3) * 0.03
-      : isWalkingTogether
-      ? Math.abs(Math.sin(walkDistance * 9.5)) * 0.035
-      : Math.sin(elapsed * 5 + index) * 0.025;
+      ? Math.sin(elapsed * 2.2 + index * 0.3) * 0.028
+      : stepping
+      ? Math.abs(Math.sin(walkDistance * 7.4 + index * 0.7)) * 0.055
+      : Math.sin(elapsed * 1.35 + index * 0.8) * 0.012;
 
     sprite.position.y = (sitting ? 1.28 : 1.45) + (emote ? Math.max(0, pulse) * (kind === 'sit' ? .025 : .2) : bob);
 
@@ -1835,8 +1841,10 @@ function animate() {
       sprite.material.rotation = bankAngle;
     } else if (kind === 'wave' && emote) {
       sprite.material.rotation = pulse * .08;
+    } else if (stepping) {
+      sprite.material.rotation = Math.sin(walkDistance * 7.4 + index * 0.7) * 0.045;
     } else {
-      sprite.material.rotation = Math.sin(elapsed * 2 + index) * .018;
+      sprite.material.rotation = Math.sin(elapsed * 1.05 + index) * 0.01;
     }
 
     const shadow = actor.children[1] as T.Mesh;

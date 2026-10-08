@@ -13,9 +13,9 @@ export function readGraphicsQualityPreference(readValue: () => unknown): Graphic
 export function resolveGraphicsQuality(value: unknown, capabilities?: GraphicsCapabilities | null): GraphicsQuality {
   if (value === 'low') return 'low';
   const memory = usable(capabilities?.deviceMemory);
-  const cores = usable(capabilities?.hardwareConcurrency);
-  return memory === undefined && cores === undefined || memory !== undefined && memory <= 4 || cores !== undefined && cores <= 4
-    ? 'low' : 'high';
+  // Four modest cores still deserve daylight and shade. Only very small
+  // phones drop to the flat low-power look unless the player asks for it.
+  return memory !== undefined && memory <= 2 ? 'low' : 'high';
 }
 
 function usable(value: unknown): number | undefined {
