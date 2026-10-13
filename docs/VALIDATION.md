@@ -1,5 +1,14 @@
 # Follow-up candidate validation — 2026-10-13 · Camera, breeding, home
 
+## Latest completed validation
+
+- Source commit **9d49fef** pushed to `origin/main` at the user's request.
+- Full Playwright suite on port **42875: 30 passed, 0 failed**, completed in 10.0 minutes against the latest production build. No tests were skipped or assertions/timeouts weakened to obtain this result.
+- Covered approved appearance/card decoding, both eight-direction movement flows, desktop/mobile gardening and building, legacy and moved-garden persistence, offline standalone, breeding, independent editing camera, home entry/cutaway/furnishings, photo framing/download, shared life, map/focus, flight controls, boundary widths, Persian input and storage failure.
+- Production build: artwork verification, TypeScript, **177 Node tests / 0 failed or skipped**, and all six budget gates passed. JS **688,963 B raw / 192,970 B gzip**, dist **26,876,216 B**, standalone **13,599,169 B**.
+- This supersedes the pending status of port 42875 below, not the historical failed or cancelled runs. Browser rendering uses Chromium SwiftShader; physical-phone performance remains unmeasured.
+- Full six-phase design remains incomplete: freely editable individual home furnishings, interiors for placed buildings, deeper daily companion/resident behavior and new approved animation assets remain. `release/play.html` was excluded from the source push and has not been promoted; the tested current standalone is `dist/play.html`.
+
 - Camera/breeding production build passed artwork verification, TypeScript, **170 Node tests / 0 failures or skips**, and all six budget gates. JS **683,318 B raw / 190,943 B gzip**, dist **26,864,024 B**, standalone **13,593,073 B**. Raw cap explicitly raised to 684,000 B for bounded editing controls; gzip/deploy caps unchanged. Optimization remains needed before further growth.
 - Port 42869: mobile camera passed; desktop failed because the build tray intercepted camera clicks. Fixed by locating desktop camera controls on the opposite side, not by forced clicks.
 - Port 42870: camera **2 passed** (390 and 1440px). Breeding **2 failed** at the parent-preservation assertion because fixtures omitted legacy `lastHarvestAt: null`; fixture corrected to match canonical saved plants. These failures are not claimed as passes.
