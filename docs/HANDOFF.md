@@ -38,7 +38,11 @@ Every `look-<outfit>-<hair>.webp` and `diag-<outfit>-<hair>.webp` is a transpare
 
 ## Limits and return
 
-Companions and residents are local, not online multiplayer or AI. Saves do not sync across devices. The game has no walkable building interiors or ARSHNAZ task rewards. Do not invent credentials or treat local values as verified productivity points.
+The shared-life candidate adds `State.life` with conservative v1 defaults: bounded species counts, vases, last gift and greenhouse mood color. Keep the key/version unchanged. `src/life.ts`, `src/life-world.ts`, `src/editing-history.ts`, `src/input.ts` and `src/save-files.ts` isolate new behavior. Harvest/use clears layout history to prevent duplicate product rewards. `tests/shared-life.spec.ts` exercises the real UI and persistence. Standalone export no longer copies to release automatically; promote only after validation. See `IMPLEMENTATION_PLAN.fa.md` for unimplemented full-plan features.
+
+`src/breeding.ts` implements two explicit living-parent crosses; hybrid species persist through the existing plant/inventory decoder. `src/editing-camera.ts` bounds the session-only building camera. `src/home-layout.ts` defines the original home's doorway/walls and furniture arrangement values; `State.life.homeArrangement` defaults to tea for legacy saves. Home and photo framing passed focused browser checks at both sizes; complete latest browser validation remains pending. Placed cottages/cabins do not have interiors. `src/resident-routine.ts` provides short active-time routes and contextual greetings; local obstacle lists refresh on layout edits.
+
+Companions and residents are local, not online multiplayer or AI. Saves do not sync across devices. The game has no ARSHNAZ task rewards. Do not invent credentials or treat local values as verified productivity points.
 
 For gameplay changes, update `CHANGELOG.md`, `docs/WORLD_DESIGN.fa.md` and `docs/VALIDATION.md`. Run the Node tests, production build, and browser suite; check 390px mobile and 1440px desktop; refresh `release/play.html` and attach a fresh screenshot. Never commit credentials, account saves or private reference photos.
 

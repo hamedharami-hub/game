@@ -5,6 +5,59 @@ import { createWorld } from './world.ts';
 import { initialState } from './state.ts';
 import { resolveObstacleCollision } from './interactions.ts';
 
+test('resident routines stay collision-safe and reduced motion freezes their positions', () => {
+  const world = createWorld(new THREE.Scene()); world.sync(initialState());
+  const village = world.root('village');
+  const residents = village.children.filter(child => child.userData.residentName);
+  assert.equal(residents.length, 7);
+  world.tick(20, false);
+  const before = residents.map(p => p.position.clone());
+  world.tick(80, false);
+  assert.ok(residents.some((p, i) => p.position.distanceTo(before[i]) > .1));
+  for (const person of residents) {
+    const point = person.getWorldPosition(new THREE.Vector3());
+    assert.equal(resolveObstacleCollision(point, .35, world.obstacles).collided, false);
+  }
+  world.tick(80, true);
+  const frozen = residents.map(p => p.position.clone());
+  world.tick(140, true);
+  assert.ok(residents.every((p, i) => p.position.equals(frozen[i])));
+  assert.match(world.residentMessage('آوا', initialState()), /گل|همسایه|مکث/);
+});
+
+test('resident local collision cache refreshes when a nearby saved prop is added', () => {
+  const world = createWorld(new THREE.Scene()); world.sync(initialState());
+  const village = world.root('village');
+  const person = village.children.find(child => child.userData.residentName === 'آوا')!;
+  world.tick(20, true);
+  const center = person.getWorldPosition(new THREE.Vector3());
+  world.sync({ ...initialState(), landscapePlacements: [{ id: 'near-resident', kind: 'tree', x: center.x, z: center.z, rotation: 0 }] });
+  world.tick(20, true);
+  const moved = person.getWorldPosition(new THREE.Vector3());
+  assert.ok(moved.distanceTo(center) > 1);
+  assert.equal(resolveObstacleCollision(moved, .35, world.obstacles).collided, false);
+});
+
+test('home shell fades without losing interior batches, furnishings or doorway', () => {
+  const scene = new THREE.Scene(), world = createWorld(scene);
+  const home = world.root('home');
+  const shell = home.getObjectByName('home-shell')!;
+  assert.equal(shell.children.length, 1);
+  world.updateHomeView(-22, -10, true);
+  assert.equal(shell.children[0].visible, false);
+  assert.equal(home.userData.inside, true);
+  assert.equal(home.getObjectByName('home-tea')!.visible, true);
+  const s = initialState(); s.life.homeArrangement = 'reading'; world.sync(s);
+  assert.equal(home.getObjectByName('home-tea')!.visible, false);
+  assert.equal(home.getObjectByName('home-reading')!.visible, true);
+  for (let z = -6; z >= -11.3; z -= .1) {
+    assert.equal(resolveObstacleCollision({ x: -22, z }, .38, world.obstacles).collided, false);
+  }
+  world.updateHomeView(-22, -6, true);
+  assert.equal(shell.children[0].visible, true);
+  assert.equal(home.userData.inside, false);
+});
+
 test('a saved wooden bridge removes the covered river circle from movement blockers', () => {
   const world = createWorld(new THREE.Scene());
   const initialWaterway = [...world.waterwayObstacles];

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — Photo framing and local resident routines
+- Limited each resident's collision checks to a conservative local obstacle cache refreshed on layout changes instead of scanning the entire world per frame. Added a regression test proving a newly placed nearby tree updates that cache. Source tests passed; next build/full browser run still required.
+- Added a live scene framing panel with independent pan, zoom and recenter controls. Capture applies the latest frame; closing restores the previous camera view and never writes player/save coordinates.
+- Added short deterministic resident walking/pause cycles with flower, social and resting activities. Collision checks keep residents out of buildings, water and saved props; reduced motion freezes positions. These are local movement routines, not new skeletal animations or a full daily-life simulation.
+- Resident greetings now respond to current activity, vases and actual hybrid plants.
+- Home and photo browser tests passed at 390px and 1440px. Resident unit/world tests passed; complete latest browser validation pending. Raw budget deliberately rebaselined to 690,000 B for measured 688,799 B; gzip/deploy limits unchanged.
+
+## Unreleased — Bounded editing camera, living flower crosses and home candidate
+- Added touch controls and Alt+direction keys for a session-only building camera; panning never moves the player or writes a save. Positioned desktop camera controls away from the build tray.
+- Added explicit pollination between neighboring ripe moonflower/sunblossom and spiritfern/starlily parents. Dawnflower and mistlily children grow, move, harvest, gift and persist like other living flowers; parents remain intact, with no cost or random reward.
+- Added a walkable original home doorway, roof/wall cutaway and two persistent, free furniture arrangements. Home furniture and removable shell remain independently batched. Production checks and 173 Node tests passed; browser validation remains pending.
+- Deliberately rebaselined the JavaScript budget to 688,000 B raw / 193,000 B gzip for the measured 686,597 / 192,009 B home build; deploy cap unchanged. This is feature growth, not an optimization claim.
+- Preserved version-1 keys, legacy plants, artwork and appearance defaults. No release promotion or deployment.
+
 ## Unreleased — One-map wandering and quality fixes
 - Added one small, keyboard/touch accessible map for the six existing landmarks and a live player marker. Selecting a landmark walks to a nearby safe point; the map never teleports the player or changes scenes.
 - Added low-cost 2D route planning around world colliders, brief arrival cues, and route checks that prove every named landmark is reachable from the starting garden.
@@ -76,3 +90,13 @@
 - Correct facial structure, brows, eye color and compact proportions in album/story and directional wardrobe sheets.
 - Keep five exact original reference sheets and their hashes with per-asset provenance; preserve approved ARSHNAZ login/companion art.
 - Preserve all eight movement angles, saved appearance choices and the existing restrained story/optional album behavior.
+# Shared-life implementation — 2026-10-13 (candidate, not fully validated)
+
+- Physical Persian/English keyboard controls, click routing, companion path refresh and visible destinations.
+- Separate persistent storage errors, portable validated saves, volume/mute and complete dialog focus loop.
+- Explicit harvest, per-flower moving/removal, bounded layout Undo/Redo, optional snap and duplicate preview.
+- Persistent harvested flowers, proximity gifts, movable flower vases and local named resident greetings.
+- Greenhouse mood-color prototype, wait/follow companion mode and PNG scene export with approved art unchanged.
+- Standalone generation no longer automatically promotes an unvalidated release.
+- JS budget deliberately rebaselined for added features without new dependencies: 680 KB raw / 192 KB gzip; deploy cap unchanged.
+- Full house interiors, hybrid breeding, skeletal/multiframe art and real-device performance remain pending; see docs/IMPLEMENTATION_PLAN.fa.md.

@@ -1,5 +1,6 @@
 import * as T from 'three';
-import { cellUnlocked, gridSize, growthStage, harvest, plantAt, species, type Plant, type Species, type State } from './state';
+import { breedAt, breedingResult, crosses } from './breeding';
+import { cellUnlocked, gridSize, growthStage, harvest, plantAt, movePlant, species, type Plant, type Species, type State } from './state';
 import { planetElevation } from './interactions';
 import { gardenTangentEuler } from './garden-transform';
 
@@ -25,6 +26,7 @@ export function createGarden(
   onOpen: () => void,
   onClose: () => void,
   onProjects: () => void,
+  onFlowers: () => void,
 ) {
   const root = new T.Group();
   root.position.set(-2, planetElevation(-2, 14) + .02, 14);
@@ -40,13 +42,17 @@ export function createGarden(
   let editing = false;
   let kind: Species = 'moonflower';
   let selected: string | null = null;
+  let movingPlant = false;
+  let breedingPlant = false;
   let lastTick = 0;
   let stageSignature = '';
   let reactionSignature = '';
   let cellSignature = '';
   const baseBedColor = new T.Color('#76915e');
   const targetBedColor = baseBedColor.clone();
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reducedMotion = motionPreference.matches;
+  motionPreference.addEventListener('change', event => { reducedMotion = event.matches; redraw(); });
 
   const geometries = {
     seed: new T.SphereGeometry(.12, 12, 8),
@@ -448,6 +454,22 @@ export function createGarden(
 
   function selectCell(col: number, row: number) {
     const state = getState();
+    if (breedingPlant && selected) {
+      const id = `cross-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const next = breedAt(state, selected, col, row, Date.now(), id);
+      if (next === state) { notice.textContent = 'دو والد شکفتهٔ سازگار کنار هم و خاک خالی لازم است.'; return; }
+      breedingPlant = false; selected = id; change(next); redraw(); renderPanel();
+      notice.textContent = `${species[next.plants.at(-1)!.species].name} کاشته شد؛ والدها حفظ شدند.`;
+      return;
+    }
+    if (movingPlant && selected) {
+      const next = movePlant(state, selected, col, row);
+      if (next === state) { notice.textContent = 'برای جابه‌جایی خاک خالی را انتخاب کن.'; return; }
+      movingPlant = false;
+      change(next); redraw(); renderPanel();
+      notice.textContent = 'گل با حفظ رشد جابه‌جا شد.';
+      return;
+    }
     if (!cellUnlocked(state.plotLevel, col, row)) {
       notice.textContent = 'این خاک هنوز آماده نیست';
       return;
@@ -456,10 +478,6 @@ export function createGarden(
     if (existing) {
       selected = existing.id;
       const now = Date.now();
-      if (growthStage(existing, now) === 3 && collect(existing, now)) {
-        renderPanel();
-        return;
-      }
       notice.textContent = statusFor(existing, now);
     } else {
       const id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `plant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -481,7 +499,7 @@ export function createGarden(
     const detailsOpen = !!panel.querySelector('details[open]');
     const focus = panel.contains(document.activeElement) ? (document.activeElement as HTMLElement).id : '';
     const size = gridSize(state.plotLevel);
-    const speciesButtons = Object.entries(species).map(([id, spec]) => `
+    const speciesButtons = Object.entries(species).filter(([id]) => !crosses.some(recipe => recipe.child === id)).map(([id, spec]) => `
       <button id="species-${id}" data-species="${id}" aria-pressed="${kind === id}" aria-label="کاشت ${spec.name}" title="${spec.name}">
         <span class="garden-seed" aria-hidden="true" style="--seed-color:${spec.color}"></span>${spec.name}
       </button>`).join('');
@@ -497,8 +515,8 @@ export function createGarden(
       <div class="garden-heading"><strong>باغ</strong><button id="garden-close" aria-label="بازگشت به دشت">بازگشت</button></div>
       <div class="garden-tools" role="group" aria-label="انتخاب گل">${speciesButtons}</div>
       <div class="plant-info" aria-live="polite">${statusFor(p, now)}</div>
-      <div class="garden-actions"><button id="garden-harvest" ${p && growthStage(p, now) === 3 ? '' : 'disabled'}>چیدن</button><button id="garden-design">ساخت</button></div>
-      <details ${detailsOpen ? 'open' : ''}><summary>کاشت با فهرست</summary><div class="garden-grid" data-signature="${gridSignature}" role="group" aria-label="خانه‌های باغ" style="grid-template-columns:repeat(${size},1fr)">${cellsMarkup}</div></details>`;
+      <div class="garden-actions"><button id="garden-harvest" ${p && growthStage(p, now) === 3 ? '' : 'disabled'}>چیدن</button><button id="garden-breed" ${p && breedingResult(state, p.id, now) ? '' : 'disabled'} aria-pressed="${breedingPlant}">پیوند گل</button><button id="garden-move" ${p ? '' : 'disabled'} aria-pressed="${movingPlant}">جابه‌جایی</button><button id="garden-remove" ${p ? '' : 'disabled'}>برداشتن گل</button><button id="garden-flowers">گل‌های چیده‌شده</button><button id="garden-design">ساخت</button></div>
+      <details ${detailsOpen ? 'open' : ''}><summary>کاشت با فهرست</summary><p class="breeding-help">ماه + آفتاب ← گل سپیده؛ سرخس روح + سوسن ستاره ← سوسن مه. دو والد شکفتهٔ کنار هم را انتخاب کن و با «پیوند گل» روی خاک خالی بزن. والدها حفظ می‌شوند.</p><div class="garden-grid" data-signature="${gridSignature}" role="group" aria-label="خانه‌های باغ" style="grid-template-columns:repeat(${size},1fr)">${cellsMarkup}</div></details>`;
     panel.append(notice);
 
     panel.querySelector<HTMLButtonElement>('#garden-close')!.onclick = close;
@@ -506,6 +524,8 @@ export function createGarden(
       button.onclick = () => {
         kind = button.dataset.species as Species;
         selected = null;
+        movingPlant = false;
+        breedingPlant = false;
         notice.textContent = '';
         renderPanel();
       };
@@ -516,6 +536,18 @@ export function createGarden(
       renderPanel();
     };
     panel.querySelector<HTMLButtonElement>('#garden-design')!.onclick = onProjects;
+    panel.querySelector<HTMLButtonElement>('#garden-breed')!.onclick = () => {
+      breedingPlant = !breedingPlant; movingPlant = false; renderPanel();
+      notice.textContent = breedingPlant ? 'خاک خالی را برای گل پیوندی انتخاب کن.' : '';
+    };
+    panel.querySelector<HTMLButtonElement>('#garden-flowers')!.onclick = () => { close(); onFlowers(); };
+    panel.querySelector<HTMLButtonElement>('#garden-move')!.onclick = () => { movingPlant = !movingPlant; breedingPlant = false; renderPanel(); notice.textContent = movingPlant ? 'خاک خالی مقصد را انتخاب کن.' : ''; };
+    panel.querySelector<HTMLButtonElement>('#garden-remove')!.onclick = () => {
+      if (!selected) return;
+      change({ ...getState(), plants: getState().plants.filter(item => item.id !== selected) });
+      selected = null; movingPlant = false; breedingPlant = false; redraw(); renderPanel();
+      notice.textContent = 'گل برداشته شد؛ از برگرداندن عمل می‌توانی استفاده کنی.';
+    };
     bindCells();
     if (focus) panel.querySelector<HTMLButtonElement>(`#${focus}`)?.focus({ preventScroll: true });
   }
@@ -535,12 +567,15 @@ export function createGarden(
     if (info && info.textContent !== message) info.textContent = message;
     const harvestButton = panel.querySelector<HTMLButtonElement>('#garden-harvest');
     if (harvestButton) harvestButton.disabled = !p || growthStage(p, now) < 3;
+    const breedButton = panel.querySelector<HTMLButtonElement>('#garden-breed');
+    if (breedButton) breedButton.disabled = !p || !breedingResult(state, p.id, now);
     const details = panel.querySelector('details');
     const wasOpen = !!details?.open;
     const grid = panel.querySelector<HTMLElement>('.garden-grid');
     if (grid) {
       const next = state.plants.map(plant => `${plant.id}:${growthStage(plant, now)}:${plant.col}:${plant.row}`).join('|');
       if (grid.dataset.signature !== next) {
+        const focusedId = grid.contains(document.activeElement) ? (document.activeElement as HTMLElement).id : '';
         grid.dataset.signature = next;
         grid.innerHTML = cells.filter(cell => cellUnlocked(state.plotLevel, cell.col, cell.row)).map(cell => {
           const { col, row } = cell;
@@ -549,6 +584,7 @@ export function createGarden(
           return `<button id="cell-${col}-${row}" data-col="${col}" data-row="${row}" aria-label="${label}" aria-pressed="${plant?.id === selected}">${plant ? '<span aria-hidden="true">✿</span>' : '<span aria-hidden="true">·</span>'}</button>`;
         }).join('');
         bindCells();
+        if (focusedId) document.getElementById(focusedId)?.focus({ preventScroll: true });
       }
     }
     if (details && wasOpen) details.open = true;
@@ -559,6 +595,8 @@ export function createGarden(
     document.querySelector('main')!.classList.add('gardening');
     panel.hidden = false;
     selected = null;
+    movingPlant = false;
+    breedingPlant = false;
     notice.textContent = '';
     onOpen();
     redraw();

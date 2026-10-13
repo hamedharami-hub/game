@@ -1,4 +1,5 @@
 :root {
+  --touch-size: 44px;
   color-scheme: light;
   font-family: "Aptos", "Segoe UI", Tahoma, sans-serif;
   font-synthesis: none;
@@ -949,4 +950,43 @@ main.building #interact { display: none; }
   .object-controls button,
   .object-control { border: 2px solid #405849; }
   .build-object-picker select { border: 2px solid #405849; color: #14271c; background: #fffdf4; }
+}
+
+/* Shared-life controls: keep a readable primary row and move secondary tools out. */
+.scene-tools { position: fixed; inset-inline-start: 12px; top: calc(78px + var(--safe-top)); display: flex; flex-wrap: wrap; gap: 5px; max-width: 320px; padding: 6px; z-index: 5; }
+.scene-tools button { min-width: 44px; min-height: 44px; padding: 6px 9px; font-size: 12px; }
+.save-status { position: fixed; inset-inline-start: 14px; bottom: calc(76px + var(--safe-bottom)); max-width: 270px; padding: 5px 9px; border-radius: 10px; background: #fffaf0; color: #315847; font-size: 12px; z-index: 8; }
+.save-status:empty { display: none; }
+.save-status[data-failed="true"] { background: #fff0dd; color: #782f20; border: 2px solid #782f20; }
+.garden-actions { flex-wrap: wrap; }
+#overlay.photo-framing { align-items: end; background: transparent; backdrop-filter: none; }
+#overlay.photo-framing .dialog { width: min(640px, calc(100vw - 24px)); max-height: 40dvh; padding: 10px 14px; overflow-y: auto; }
+#overlay.photo-framing h2 { font-size: 17px; margin: 0; }
+#overlay.photo-framing p { margin: 3px 0; }
+.photo-controls { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+.photo-controls button { min-width: 44px; min-height: 44px; padding: 5px 9px; }
+.build-palette.is-collapsed > :not(.build-palette__heading) { display: none; }
+#editing-camera { position: fixed; inset-inline-end: 12px; top: calc(150px + var(--safe-top)); z-index: 6; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; max-width: 260px; }
+#editing-camera[hidden] { display: none; }
+#editing-camera button { min-width: 44px; min-height: 44px; }
+#editing-camera span { width: 100%; font-size: 12px; text-align: center; }
+@media (max-width: 600px) {
+  #editing-camera { inset-inline-end: auto; inset-inline-start: 12px; max-width: 160px; top: calc(168px + var(--safe-top)); }
+  #editing-camera button { font-size: 12px; padding: 5px; }
+  #camera-home { flex: 1 0 100%; }
+}
+.graphics-settings label { display: grid; gap: 8px; }
+.graphics-settings input[type="range"], .graphics-settings input[type="file"] { max-width: 100%; min-height: 44px; }
+.action-bar .flight-altitude-btn { position: fixed; bottom: calc(98px + var(--safe-bottom)); min-width: 64px; min-height: 44px; font-size: 13px; }
+#flight-ascend-btn { inset-inline-end: 12px; }
+#flight-descend-btn { inset-inline-end: 84px; }
+@media (max-width: 600px) {
+  .action-bar { gap: 4px; }
+  .action-bar button { min-width: 44px; min-height: 44px; font-size: 12px; padding: 6px 8px; }
+  #camera-view { position: fixed; top: calc(120px + var(--safe-top)); inset-inline-end: 10px; font-size: 12px; }
+  .scene-tools { top: calc(65px + var(--safe-top)); max-width: calc(100vw - 20px); inset-inline-start: 10px; }
+  .scene-tools button { font-size: 11px; padding: 5px 7px; }
+  .garden-panel { max-height: 43dvh; overflow-y: auto; }
+  .build-palette { max-height: 48dvh; }
+  .garden-actions button { min-width: 44px; min-height: 44px; }
 }

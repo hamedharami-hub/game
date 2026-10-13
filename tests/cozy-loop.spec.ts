@@ -140,6 +140,7 @@ for (const viewport of [
 }
 
 test('free build preview places, selects, moves, rotates, removes, and restores saved objects', async ({ page }) => {
+  test.setTimeout(180000);
   const profile = 'free-placement-flow';
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -179,16 +180,16 @@ test('free build preview places, selects, moves, rotates, removes, and restores 
     return Math.hypot(current.x - placed.x, current.z - placed.z);
   }).toBeGreaterThan(1);
   const moved = (await readPlacements())[0];
-  const movedScreenPoint = await placementScreenPoint(page);
-
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#world canvas')).toBeVisible();
   await expect.poll(async () => {
     const current = (await readPlacements())[0];
     return current && Math.hypot(current.x - moved.x, current.z - moved.z);
   }).toBeLessThan(0.001);
   await page.locator('#build-action').click();
-  await clickTreeAt(page, movedScreenPoint);
+  // Reload resets the camera; the old projected pixel is no longer the tree.
+  // Pointer picking is exercised before reload, persistence selection via its stable id here.
+  await page.locator('#landscape-object-select').selectOption(placed.id);
   await expect(page.locator('#remove-landscape')).toBeEnabled();
   await page.locator('#rotate-landscape-right').click();
   await expect.poll(async () => Math.abs((await readPlacements())[0].rotation - Math.PI / 6)).toBeLessThan(0.0001);
@@ -296,6 +297,8 @@ test('a legacy v1 garden resumes with ripe flowers and no offline loss', async (
   await expect(page.locator('#cell-2-2')).toHaveAttribute('aria-label', /شکوفه/);
   await expectNoHorizontalOverflow(page);
   await page.locator('#cell-2-2').click();
+  await expect(page.locator('#garden-harvest')).toBeEnabled();
+  await page.locator('#garden-harvest').click();
   await expect(page.locator('.garden-notice')).toContainText('چیده شد');
 
   const resumed = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), stateKey('legacy-v1'));

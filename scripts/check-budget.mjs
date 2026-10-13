@@ -85,8 +85,16 @@ const TEST_TIMEOUT_MS = 300_000;
 
 const BUDGET = Object.freeze({
   minTests: 115,
-  jsRawBytes: 660_000,
-  jsGzipBytes: 185_000,
+  // Shared-life vertical slice measured 674,834 raw / 188,410 gzip on Node 24.
+  // +14.8 KB implements editing, portable saves, gifts, vases and photo export;
+  // no dependency or art payload was added. Keep bounded feature headroom.
+  // Walkable home/furniture/entry routing: measured 686,597 B raw and
+  // 192,009 B gzip after camera + breeding (683,318 / 190,943 B).
+  // Explicit feature baseline, not an optimization claim; deploy cap unchanged.
+  // Photo framing + resident routines measured 688,799 B; gzip 192,875 B.
+  // No new dependencies/assets. Gzip and deployment caps unchanged.
+  jsRawBytes: 690_000,
+  jsGzipBytes: 193_000,
   distBytes: 27_500_000,
   maxArtPng: 0,
 });

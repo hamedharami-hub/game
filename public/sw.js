@@ -75,7 +75,7 @@
  * on first fetch.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2-shared-life';
 const CACHE = `caravan-${VERSION}`;
 
 const SHELL_URL = '/index.html';
@@ -115,7 +115,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name)));
+      await Promise.all(names.filter((name) => name.startsWith('caravan-') && name !== CACHE).map((name) => caches.delete(name)));
       // Take over the page that triggered this install so offline works without
       // a manual reload. No skipWaiting(): a newer worker waits for the open
       // tabs instead of swapping caches under a running game.

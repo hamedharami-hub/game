@@ -1,10 +1,11 @@
+import { emptyLife, decodeLife, type SharedLife } from './life.ts';
 export const SAVE_KEY = 'dream-caravan:garden:v1';
 const plantIdPattern = /^[a-z0-9-]{1,64}$/i;
 export const resources = ['seed', 'crystal', 'feather'] as const;
 export type Resource = typeof resources[number];
 export type Invention = 'lantern' | 'sprout';
-export interface State { version: 1; collected: Resource[]; invention: Invention | null; restored: boolean; plotLevel: number; plants: Plant[]; essence: number; houseLevel: number; projects: Project[]; hybrids: boolean; aura: number; lastGatherAt: number | null; visited: District[]; worldSeed: number; regionLevels: Record<District,number>; decorations: Decoration[]; landscapePlacements: LandscapePlacement[]; gorHair: HairColor; angelHair:HairColor; gorOutfit:Outfit; angelOutfit:Outfit }
-export const initialState = (): State => ({ version: 1, collected: [], invention: null, restored: false, plotLevel: 5, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],landscapePlacements:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
+export interface State { version: 1; life: SharedLife; collected: Resource[]; invention: Invention | null; restored: boolean; plotLevel: number; plants: Plant[]; essence: number; houseLevel: number; projects: Project[]; hybrids: boolean; aura: number; lastGatherAt: number | null; visited: District[]; worldSeed: number; regionLevels: Record<District,number>; decorations: Decoration[]; landscapePlacements: LandscapePlacement[]; gorHair: HairColor; angelHair:HairColor; gorOutfit:Outfit; angelOutfit:Outfit }
+export const initialState = (): State => ({ version: 1, life: emptyLife(), collected: [], invention: null, restored: false, plotLevel: 5, plants: [], essence: 0, houseLevel: 0, projects: [], hybrids: false, aura: 0, lastGatherAt: null, visited: ['garden'],worldSeed:1,regionLevels:emptyRegionLevels(),decorations:[],landscapePlacements:[],gorHair:'white',angelHair:'black',gorOutfit:'classic',angelOutfit:'classic' });
 export function decodeSave(raw: string | null): State {
   try {
     const s = JSON.parse(raw ?? 'null');
@@ -19,7 +20,7 @@ export function decodeSave(raw: string | null): State {
       if(!p||typeof p.id!=='string'||!plantIdPattern.test(p.id)||!Object.hasOwn(species,p.species)||!cellUnlocked(plotLevel,p.col,p.row)||![p.plantedAt,p.boostMs,p.lastWaterAt].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0)||plants.some(q=>q.id===p.id||q.col===p.col&&q.row===p.row))continue;
       plants.push({id:p.id,species:p.species,col:p.col,row:p.row,plantedAt:p.plantedAt,boostMs:Math.min(p.boostMs,species[p.species as Species].minutes*60000),lastWaterAt:p.lastWaterAt,lastHarvestAt:typeof p.lastHarvestAt==='number'&&Number.isFinite(p.lastHarvestAt)&&p.lastHarvestAt>=0?p.lastHarvestAt:null});
     }
-    return { version: 1, collected, invention, restored: Boolean(s.restored && invention), plotLevel, plants,
+    return { version: 1, life: decodeLife(s.life), collected, invention, restored: Boolean(s.restored && invention), plotLevel, plants,
       essence:bounded(s.essence,100000),houseLevel:bounded(s.houseLevel,3),aura:bounded(s.aura,3),
       projects:Array.isArray(s.projects)?[...new Set<Project>(s.projects.filter((id:unknown)=>typeof id==='string'&&Object.hasOwn(projects,id)))]:[],
       hybrids:s.hybrids===true,lastGatherAt:typeof s.lastGatherAt==='number'&&Number.isFinite(s.lastGatherAt)&&s.lastGatherAt>=0?s.lastGatherAt:null,
@@ -39,6 +40,8 @@ export const species = {
   sunblossom: { name: 'گل آفتاب', minutes: 1.5, color: '#f7ca75' },
   spiritfern: { name: 'سرخس روح', minutes: 2, color: '#91dac3' },
   starlily: { name: 'سوسن ستاره', minutes: 1.25, color: '#f0a6bf' },
+  dawnflower: { name: 'گل سپیده', minutes: 1.5, color: '#f5ad91' },
+  mistlily: { name: 'سوسن مه', minutes: 1.75, color: '#9acfe5' },
 } as const;
 export type Species = keyof typeof species;
 export interface Plant { id: string; species: Species; col: number; row: number; plantedAt: number; boostMs: number; lastWaterAt: number; lastHarvestAt: number | null }
@@ -106,7 +109,7 @@ export function harvest(s:State,id:string,now=Date.now()):State{
  const p=s.plants.find(p=>p.id===id);
  if(!p||!Number.isFinite(now)||now<p.plantedAt||growthStage(p,now)<3)return s;
  // A harvested flower remains planted and begins a fresh, short growth cycle.
- return {...s,plants:s.plants.map(p=>p.id===id?{...p,plantedAt:now,boostMs:0,lastWaterAt:0,lastHarvestAt:now}:p)};
+  return {...s,life:{...s.life,flowers:{...s.life.flowers,[p.species]:Math.min(99,(s.life.flowers[p.species]??0)+1)}},plants:s.plants.map(p=>p.id===id?{...p,plantedAt:now,boostMs:0,lastWaterAt:0,lastHarvestAt:now}:p)};
 }
 export function gatherLight(s:State,now=Date.now()):State{
  if(!Number.isFinite(now)||now<0)return s;

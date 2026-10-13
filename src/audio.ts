@@ -5,6 +5,7 @@
  */
 
 export interface AudioEngine {
+  setVolume(value: number): void;
   enable(context?: AudioContext): void;
   updateAmbience(windFactor: number, rainFactor: number, waterDistance: number): void;
   playHandholdChime(): void;
@@ -196,6 +197,7 @@ export function createAudioEngine(): AudioEngine {
 
   let lastAmbienceUpdate = -10000;
   let isEnabled = false;
+  let volume = 1;
 
   function duckAmbience(duration = 1.5, duckGain = 0.42) {
     if (!ambienceBus || !ctx) return;
@@ -369,6 +371,10 @@ export function createAudioEngine(): AudioEngine {
   }
 
   const engine: AudioEngine = {
+    setVolume(value: number) {
+      volume = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+      if (masterGain) masterGain.gain.value = .6 * volume;
+    },
     enable(customContext?: AudioContext) {
       if (isEnabled && ctx && ctx.state !== 'closed') {
         if (ctx.state === 'suspended') {
@@ -392,7 +398,7 @@ export function createAudioEngine(): AudioEngine {
 
         // Master bus with transparent compression limiter
         masterGain = ctx.createGain();
-        masterGain.gain.value = 0.60;
+        masterGain.gain.value = 0.60 * volume;
 
         if (typeof ctx.createDynamicsCompressor === 'function') {
           limiter = ctx.createDynamicsCompressor();

@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { homeObstacles, insideHome } from './home-layout.ts';
+import { residentRoutine, residentGreeting } from './resident-routine.ts';
 import {
   decorationPosition,
   type Decoration,
@@ -8,7 +10,7 @@ import {
   type LandscapePlacement,
   type State,
 } from './state.ts';
-import type { ObstacleCircle } from './interactions';
+import { resolveObstacleCollision, type ObstacleCircle } from './interactions.ts';
 import { gardenTangentEuler } from './garden-transform.ts';
 import { JUNCTION_SIGNS } from './junction-signs.ts';
 
@@ -497,21 +499,55 @@ export function createWorld(scene: T.Scene) {
     color: '#edd5a0', emissive: '#d99b4e', emissiveIntensity: 0.2,
     roughness: 0.45, metalness: 0.02,
   });
-  box('#eadcc2', 0, 1.5, 0, 5.4, 3, 4.2, home);
-  const roof = shape(geometries.cone, '#ad8177', 0, 3.4, 0, 4.5, 2.1, 4.2, home);
+  const homeShell = new T.Group(); homeShell.name = 'home-shell'; home.add(homeShell);
+  box('#eadcc2', -2.7, 1.5, 0, .18, 3, 4.2, homeShell);
+  box('#eadcc2', 2.7, 1.5, 0, .18, 3, 4.2, homeShell);
+  box('#eadcc2', 0, 1.5, -2.1, 5.4, 3, .18, homeShell);
+  for (const x of [-1.85, 1.85]) box('#eadcc2', x, 1.5, 2.1, 1.7, 3, .18, homeShell);
+  box('#eadcc2', 0, 2.65, 2.1, 2, .7, .18, homeShell);
+  box('#ba9476', 0, .03, 0, 5.3, .08, 4.1, home);
+  box('#ceaa9a', 0, .09, .2, 2.3, .025, 2.8, home);
+  const roof = shape(geometries.cone, '#ad8177', 0, 3.4, 0, 4.5, 2.1, 4.2, homeShell);
   roof.rotation.y = Math.PI / 4;
-  box('#8c715a', 0, 0.95, 2.12, 1.05, 1.9, 0.12, home);
   for (const x of [-1.65, 1.65]) {
-    const window = box('#edd5a0', x, 1.85, 2.15, 0.9, 0.82, 0.12, home);
+    const window = box('#edd5a0', x, 1.85, 2.15, 0.9, 0.82, 0.12, homeShell);
     window.material = windowGlowMaterial;
     drop(window);
-    box('#d8b56f', x, 1.34, 2.22, 1.18, 0.16, 0.35, home);
+    box('#d8b56f', x, 1.34, 2.22, 1.18, 0.16, 0.35, homeShell);
   }
   for (const x of [-2, 2]) pillar('#e8d4b5', x, 1.5, 3.4, 0.12, 3, home);
-  box('#a37c5f', 0, 3.02, 3.4, 4.6, 0.16, 1.9, home);
+  box('#a37c5f', 0, 3.02, 3.4, 4.6, 0.16, 1.9, homeShell);
   box('#a37c5f', 0, 0.17, 3.65, 5.4, 0.2, 2.4, home);
-  pillar('#9c7861', 1.9, 4.12, -1.35, 0.28, 1.55, home);
-  box('#ede2c9', 0, 0.82, 4.8, 2.8, 0.15, 0.72, home);
+  pillar('#9c7861', 1.9, 4.12, -1.35, 0.28, 1.55, homeShell);
+  box('#ede2c9', 1.65, 0.82, 4.8, 1.5, 0.15, 0.72, home);
+  const shellParts = homeShell.children as T.Mesh[];
+  drop(...shellParts);
+  const shellMaterial = new T.MeshStandardMaterial({ vertexColors: true, roughness: .86 });
+  const shellMesh = bake([...shellParts], homeShell, shellMaterial, true);
+  for (const part of [...shellParts]) if (part !== shellMesh) part.removeFromParent();
+  shellMesh.castShadow = true; shellMesh.receiveShadow = true;
+  const homeFurniture = new Map<string, T.Group>();
+  for (const arrangement of ['tea', 'reading']) {
+    const furniture = new T.Group(); furniture.name = `home-${arrangement}`; home.add(furniture);
+    box('#9d7b62', 1.6, .9, -1.4, 1.1, 1.8, .55, furniture);
+    for (let i = 0; i < 4; i++) box(['#91b7ab', '#d9ad99', '#b5a3cb'][i % 3], 1.3 + i * .18, 1.2, -1.08, .13, .42, .2, furniture);
+    box('#816953', -1.4, .46, -.9, 1.2, .16, 1.1, furniture);
+    for (const x of [-1.85, -.95]) pillar('#816953', x, .22, -.9, .07, .44, furniture);
+    if (arrangement === 'tea') {
+      for (const x of [-1.65, -1.15]) { pillar('#e7d3ad', x, .61, -.9, .12, .14, furniture); }
+      box('#a7b9a4', 1.5, .38, .6, 1.2, .28, 1.2, furniture);
+      box('#a7b9a4', 2, .85, .6, .2, .8, 1.2, furniture);
+    } else {
+      box('#d4b999', -1.4, .57, -.9, .65, .08, .55, furniture);
+      box('#aaa1b8', 1.5, .38, .6, 1.2, .28, 1.2, furniture);
+      box('#aaa1b8', 2, .85, .6, .2, .8, 1.2, furniture);
+      orb('#ebd29b', -1.8, .74, -1.1, .13, furniture);
+    }
+    const parts = [...furniture.children] as T.Mesh[]; drop(...parts);
+    bake(parts, furniture, villagerMaterial, true);
+    for (const part of parts) part.removeFromParent();
+    furniture.visible = arrangement === 'tea'; homeFurniture.set(arrangement, furniture);
+  }
 
   // A small village square around a water bowl; friendly residents wander slowly.
   const village = roots.village;
@@ -553,6 +589,7 @@ export function createWorld(scene: T.Scene) {
       arm.rotation.z = side * 0.2;
     }
     resident.userData.origin = new T.Vector3(x, 0, z);
+    resident.userData.residentName = ['آوا', 'نیما', 'رها', 'سام', 'مهتاب', 'باران', 'آرین'][residentRoots.length];
     resident.userData.phase = random() * Math.PI * 2;
     residentRoots.push(resident);
     drop(...resident.children);
@@ -999,6 +1036,17 @@ export function createWorld(scene: T.Scene) {
   const placedLandscape = new Map<string, { kind: LandscapeKind; placement: LandscapePlacement; root: T.Group }>();
   const placementObstacles: (ObstacleCircle & { placementId: string })[] = [];
   const combinedObstacles: ObstacleCircle[] = [];
+  const residentObstacles: ObstacleCircle[][] = [];
+  const refreshResidentObstacles = () => {
+    residentRoots.forEach((person, i) => {
+      const origin = person.userData.origin as T.Vector3;
+      // All routine offsets stay within 2m; retain a conservative extra margin
+      // for actor radius and collision pushes. Rebuild only when layout changes.
+      residentObstacles[i] = combinedObstacles.filter(obstacle => Math.hypot(
+        obstacle.x - village.position.x - origin.x,
+        obstacle.z - village.position.z - origin.z) <= obstacle.radius + 4);
+    });
+  };
   // Movement collision follows the solid part of each model. The larger
   // saved-placement footprints are used for layout clearance, not collision:
   // beds, flowers, open bridges and the gazebo interior remain walkable.
@@ -1283,6 +1331,7 @@ export function createWorld(scene: T.Scene) {
     const coveredWater = waterwayObstacles.filter(obstacle => !state.landscapePlacements.some(placement =>
       placement.kind === 'wooden-bridge' && bridgeCoversWater(placement, obstacle)));
     combinedObstacles.splice(0, combinedObstacles.length, ...worldObstacles, ...coveredWater, ...placementObstacles);
+    refreshResidentObstacles();
   };
   const rebuild = (state: State) => {
     const nextSignature = JSON.stringify([state.decorations, state.worldSeed]);
@@ -1323,6 +1372,7 @@ export function createWorld(scene: T.Scene) {
   }
 
   function sync(state: State) {
+    for (const [arrangement, furniture] of homeFurniture) furniture.visible = arrangement === state.life.homeArrangement;
     rebuild(state);
   }
 
@@ -1347,17 +1397,20 @@ export function createWorld(scene: T.Scene) {
 
   function tick(time: number, reduced: boolean, windStrength = 1) {
     fallGlints.visible = !reduced;
+    residentRoots.forEach((person, i) => {
+      const origin = person.userData.origin as T.Vector3;
+      const routine = residentRoutine(i, reduced ? 20 : time);
+      const point = resolveObstacleCollision({ x: village.position.x + origin.x + routine.x,
+        z: village.position.z + origin.z + routine.z }, .35, residentObstacles[i]);
+      person.position.set(point.x - village.position.x,
+        planetElevation(point.x, point.z) - village.position.y + .035,
+        point.z - village.position.z);
+      person.rotation.y = routine.heading;
+      person.userData.activity = routine.activity;
+    });
     if (reduced) return;
     const normalizedWind = Number.isFinite(windStrength) ? Math.max(0, Math.min(1, windStrength)) : 1;
     const wind = 0.4 + normalizedWind * 0.65;
-    residentRoots.forEach((person, i) => {
-      const origin = person.userData.origin as T.Vector3;
-      const phase = person.userData.phase as number;
-      person.position.x = origin.x + Math.sin(time * 0.22 + phase) * 0.45;
-      person.position.z = origin.z + Math.cos(time * 0.22 + phase) * 0.35;
-      person.position.y = 0.035 + Math.sin(time * 1.35 + i) * 0.035;
-      person.rotation.y = Math.sin(time * 0.18 + phase) * 0.2;
-    });
     // A slow shared breeze is enough to make the meadows feel alive.
     treePositions.forEach((tree, i) => {
       dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
@@ -1428,9 +1481,8 @@ export function createWorld(scene: T.Scene) {
   // 3. Community grand tree
   worldObstacles.push({ x: 0, z: -13, radius: 1.35 });
 
-  // 4. Two-Horn Home cottage
-  worldObstacles.push({ x: -23.2, z: -10, radius: 2.1 });
-  worldObstacles.push({ x: -20.8, z: -10, radius: 2.1 });
+  // 4. Thin home walls leave an actual walkable doorway and furnished room.
+  worldObstacles.push(...homeObstacles());
 
   // 5. Greenhouse structure
   worldObstacles.push({ x: 18.2, z: 14, radius: 2.4 });
@@ -1504,6 +1556,7 @@ export function createWorld(scene: T.Scene) {
   }
 
   combinedObstacles.push(...worldObstacles, ...waterwayObstacles);
+  refreshResidentObstacles();
 
   return {
     sync,
@@ -1514,6 +1567,25 @@ export function createWorld(scene: T.Scene) {
     landscapeRoot,
     setLandscapePreview,
     pickLandscape,
+    residentMessage(name: string, state: State) {
+      const person = residentRoots.find(item => item.userData.residentName === name);
+      return residentGreeting(person?.userData.activity ?? 'social', state.life.vases.length > 0,
+        state.plants.some(p => p.species === 'dawnflower' || p.species === 'mistlily'));
+    },
+    updateHomeView(x: number, z: number, reduced: boolean) {
+      const target = insideHome(x, z) ? 0 : 1;
+      shellMaterial.opacity = reduced ? target : T.MathUtils.lerp(shellMaterial.opacity, target, .16);
+      shellMaterial.transparent = shellMaterial.opacity < .99;
+      shellMaterial.depthWrite = !shellMaterial.transparent;
+      shellMesh.visible = shellMaterial.opacity > .02;
+      shellMesh.castShadow = !shellMaterial.transparent;
+      home.userData.inside = target === 0;
+    },
+    pickResident(raycaster: T.Raycaster): string | null {
+      village.updateWorldMatrix(true, true);
+      for (const resident of residentRoots) if (raycaster.intersectObject(resident, true).length) return resident.userData.residentName as string;
+      return null;
+    },
     bounds,
     get landscapeObstacles() { return placementObstacles; },
     get waterwayObstacles() { return waterwayObstacles; },

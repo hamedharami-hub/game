@@ -41,6 +41,9 @@ import {
   MIN_FLIGHT_ALTITUDE,
   MAX_FLIGHT_ALTITUDE,
   type FlightState,
+  toggleHandHolding as nextHandHolding,
+  toggleFlight as nextFlight,
+  createTraversalState,
 } from './interactions';
 import {
   triggerVignette,
@@ -49,6 +52,12 @@ import {
   type VignetteState,
 } from './vignette';
 import { createFaunaMeshGroup } from './fauna';
+import { controlKey, movementKeys, focusableElements } from './input';
+import { createEditingHistory } from './editing-history';
+import { useFlower, type FlowerVase } from './life';
+import { importSaveFile, downloadFile } from './save-files';
+import { createLifeWorld } from './life-world';
+import { panEditingCamera } from './editing-camera';
 
 const audioEngine = createAudioEngine();
 if (typeof window !== 'undefined') {
@@ -80,6 +89,7 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
     <div class="build-palette__heading">
       <h2 id="build-palette-title">ساخت در سراسر دشت</h2>
       <button id="finish-building" class="object-control" aria-label="پایان ساخت‌وساز">پایان</button>
+      <button id="collapse-building" class="object-control" aria-expanded="true">جمع‌کردن ابزار</button>
     </div>
     <p class="build-palette__hint">گل‌های این فهرست تزئینی‌اند؛ گل‌های کاشتنی در باغچه می‌رویند. روی چمن بزن یا با جهت‌ها جابه‌جا کن؛ R بچرخان و Enter ثبت کن.</p>
     <label class="build-object-picker" for="landscape-object-select">
@@ -106,9 +116,21 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
       <button id="rotate-landscape-left" class="object-control" aria-label="چرخش ۱۵ درجه به چپ">↺ ۱۵°</button>
       <button id="rotate-landscape-right" class="object-control" aria-label="چرخش ۱۵ درجه به راست">↻ ۱۵°</button>
       <button id="remove-landscape" class="object-control object-control--remove" data-action="remove" aria-label="برداشتن سازهٔ انتخاب‌شده" disabled>برداشتن</button>
+      <button id="duplicate-landscape" class="object-control" disabled>ساخت مشابه</button>
+      <label><input id="snap-landscape" type="checkbox">تراز نیم‌متری</label>
     </div>
   </section>
   <div id="placement-preview" class="placement-preview" data-placement-state="invalid" aria-hidden="true" hidden></div>
+  <aside class="scene-tools glass" aria-label="کنترل منظره"><button id="zoom-in" aria-label="نزدیک‌کردن دوربین">＋</button><button id="zoom-out" aria-label="دورکردن دوربین">−</button><button id="undo-edit" disabled>برگرداندن</button><button id="redo-edit" disabled>تکرار</button><button id="place-action">اینجا</button><button id="photo-action">عکس</button></aside>
+  <p id="save-status" class="save-status" role="status" aria-live="polite"></p>
+  <aside id="editing-camera" class="glass" aria-label="دوربین چیدمان" hidden>
+    <button data-camera-pan="up" aria-label="دوربین به شمال">↑</button>
+    <button data-camera-pan="left" aria-label="دوربین به غرب">←</button>
+    <button id="camera-home">کنار شخصیت</button>
+    <button data-camera-pan="right" aria-label="دوربین به شرق">→</button>
+    <button data-camera-pan="down" aria-label="دوربین به جنوب">↓</button>
+    <span>Alt + جهت‌ها: دوربین</span>
+  </aside>
   <footer class="world-footer">
     <span id="ambient-status" role="status" aria-live="polite">باغ آمادهٔ کاشت و چیدمان است.</span>
     <button id="interact" class="primary" aria-label="صحبت با گوراستاخ" title="صحبت با گوراستاخ" disabled>سلام</button>
@@ -118,6 +140,10 @@ app.innerHTML = `<main data-phase="morning" data-weather="clear">
 </main>`;
 const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
 const gameRoot = document.querySelector<HTMLElement>('main')!;
+const editHistory = createEditingHistory();
+let audioVolume = 1;
+try { const savedVolume = Number(localStorage.getItem(`${gameSaveKey}:volume`) ?? 1); audioVolume = Number.isFinite(savedVolume) ? Math.max(0, Math.min(1, savedVolume)) : 1; } catch {}
+audioEngine.setVolume(audioVolume);
 
 let state: State = initialState();
 try {
@@ -140,10 +166,14 @@ let reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const keys = new Set<string>();
 let target: T.Vector3 | null = null;
 let walkingWaypoints: T.Vector3[] = [];
+let companionRoute: T.Vector3[] = [];
+let companionRouteAt = 0;
+let stuckFor = 0;
 let nearestCompanion = false;
 let activeDialogReturn: HTMLElement | null = null;
 let activeLandMap: LandMapHandle | null = null;
 let wideView = false;
+let statusProtectedUntil = 0;
 
 function clearMovementTarget() {
   target = null;
@@ -247,7 +277,7 @@ function noticeFreshBlooms(now: number) {
 
 function refreshAmbience() {
   const base = new T.Color('#a4cfb6');
-  if (!state.plants.length) { ambienceTarget.copy(base); return; }
+  if (!state.plants.length) { ambienceTarget.copy(base).lerp(new T.Color(species[state.life.greenhouseColor].color), .08); return; }
   const color = new T.Color(0, 0, 0);
   let weight = 0;
   for (const plant of state.plants) {
@@ -256,18 +286,42 @@ function refreshAmbience() {
     weight += growth;
   }
   color.multiplyScalar(1 / Math.max(weight, 1));
-  ambienceTarget.copy(base).lerp(color, .22);
+  ambienceTarget.copy(base).lerp(color, .22).lerp(new T.Color(species[state.life.greenhouseColor].color), .08);
 }
 
 function save() {
-  try { localStorage.setItem(gameSaveKey, JSON.stringify(state)); }
-  catch { status.textContent = 'این نوبت روی همین دستگاه می‌ماند.'; }
+  const indicator = $('save-status');
+  try { localStorage.setItem(gameSaveKey, JSON.stringify(state)); indicator.textContent = 'ذخیره شد'; indicator.dataset.failed = 'false'; }
+  catch { indicator.textContent = 'ذخیره نشد؛ از تنظیمات فایل پشتیبان بگیر.'; indicator.dataset.failed = 'true'; }
   updateWorld();
   refreshAmbience();
+  syncHistoryControls();
 }
-function setStatus(message: string) { status.textContent = message; }
+function syncHistoryControls() {
+  $<HTMLButtonElement>('undo-edit').disabled = !editHistory.canUndo;
+  $<HTMLButtonElement>('redo-edit').disabled = !editHistory.canRedo;
+}
+function commitEdit(next: State) {
+  if (next === state) return;
+  editHistory.record(state); state = next; save();
+}
+function restoreEdit(direction: 'undo' | 'redo') {
+  state = editHistory[direction](state); save(); ownGarden.redraw();
+  selectedLandscapeId = null; placementCandidate = null; districtWorld.setLandscapePreview(null);
+  syncBuildControls(); setStatus(direction === 'undo' ? 'آخرین چیدمان برگشت.' : 'چیدمان تکرار شد.');
+}
+$('undo-edit').onclick = () => restoreEdit('undo');
+$('redo-edit').onclick = () => restoreEdit('redo');
+$('zoom-in').onclick = () => { zoom = T.MathUtils.clamp(zoom - .12, .68, 1.4); };
+$('zoom-out').onclick = () => { zoom = T.MathUtils.clamp(zoom + .12, .68, 1.4); };
+function setStatus(message: string) { status.textContent = message; statusProtectedUntil = performance.now() + 8000; }
 
+let photoFocus: { x: number; z: number } | null = null;
+let photoView: { zoom: number; wide: boolean } | null = null;
 function closeDialog() {
+  if (photoView) { zoom = photoView.zoom; wideView = photoView.wide; }
+  photoFocus = null; photoView = null;
+  overlay.classList.remove('photo-framing');
   overlay.hidden = true;
   activeLandMap?.destroy();
   activeLandMap = null;
@@ -287,7 +341,7 @@ function dialog(title: string, body = '', actions = '', returnFocus?: HTMLElemen
     <div class="actions">${actions}<button id="close-dialog" aria-label="بستن">بستن</button></div>
   </section>`;
   $('close-dialog').onclick = closeDialog;
-  overlay.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  focusableElements(overlay)[0]?.focus();
 }
 const scene = new T.Scene();
   scene.background = new T.Color('#a4cfb6');
@@ -325,6 +379,9 @@ softFill.position.set(20, 12, -14);
 scene.add(softFill);
 
 const districtWorld = createWorld(scene);
+const lifeWorld = createLifeWorld(scene);
+const destinationMarker = new T.Mesh(new T.RingGeometry(.22, .38, 24), new T.MeshBasicMaterial({ color: '#fff1aa', side: T.DoubleSide, depthWrite: false }));
+destinationMarker.rotation.x = -Math.PI / 2; destinationMarker.visible = false; scene.add(destinationMarker);
 const fauna = createFaunaMeshGroup(scene);
 const cameraFocus = new T.Vector3(-2, 0, 14);
 const cameraLead = new T.Vector3();
@@ -616,6 +673,11 @@ const ownGarden = createGarden(
   next => {
     if (next === state) return;
     const previous = state;
+    const harvested = next.plants.some(p => {
+      const old = previous.plants.find(item => item.id === p.id);
+      return !!old && p.lastHarvestAt !== old.lastHarvestAt;
+    });
+    if (harvested) editHistory.clear(); else editHistory.record(previous);
     state = next;
     save();
     const newPlant = next.plants.find(plant => !previous.plants.some(old => old.id === plant.id));
@@ -625,13 +687,33 @@ const ownGarden = createGarden(
       setStatus(`${species[newPlant.species].name} کاشته شد.`);
       const flower = plantWorldPosition(newPlant);
       queueCompanionMoment('flower', flower, 'wave', 'گوراستاخ کنار گل تازه مکث کرد.', 1.2);
-    } else if (next.essence > previous.essence) setStatus('گل برداشت شد.');
+    } else if (harvested) setStatus('گل چیده شد؛ آن را هدیه بده یا در گلدان بگذار.');
   },
   () => { clearMovementTarget(); keys.clear(); cancelCompanionMoments(); },
   () => { keys.clear(); },
   () => { ownGarden.close(); openBuild(); },
+  () => flowerDialog(),
 );
 let building = false;
+let editingCameraPoint = { x: -2, z: 14 };
+function panBuildCamera(dx: number, dz: number) {
+  if (!building) return;
+  editingCameraPoint = panEditingCamera(editingCameraPoint, dx, dz, worldBounds().r);
+  // Old screen projections no longer represent the preview after camera motion.
+  placementCandidate = null; placementMarker.hidden = true;
+  districtWorld.setLandscapePreview(null);
+  $('editing-camera').dataset.x = String(editingCameraPoint.x);
+  $('editing-camera').dataset.z = String(editingCameraPoint.z);
+  setPlacementMessage('دوربین جابه‌جا شد؛ جای سازه را دوباره روی زمین انتخاب کن.');
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-camera-pan]')) {
+  button.onclick = () => {
+    const direction = button.dataset.cameraPan;
+    panBuildCamera(direction === 'left' ? -4 : direction === 'right' ? 4 : 0,
+      direction === 'up' ? -4 : direction === 'down' ? 4 : 0);
+  };
+}
+$('camera-home').onclick = () => panBuildCamera(angel.position.x - editingCameraPoint.x, angel.position.z - editingCameraPoint.z);
 let buildKind: LandscapeKind | null = null;
 let selectedLandscapeId: string | null = null;
 let buildRotation = 0;
@@ -698,7 +780,11 @@ function setPlacementMessage(message: string, stateName: 'idle' | 'valid' | 'inv
 }
 
 function setBuilding(active: boolean) {
+  if (active && !building) editingCameraPoint = { x: angel.position.x, z: angel.position.z };
   building = active;
+  $('editing-camera').hidden = !active;
+  $('editing-camera').dataset.x = String(editingCameraPoint.x);
+  $('editing-camera').dataset.z = String(editingCameraPoint.z);
   gameRoot.classList.toggle('building', active);
   buildPalette.hidden = !active;
   $('build-action').setAttribute('aria-pressed', String(active));
@@ -755,6 +841,7 @@ function syncBuildControls() {
   if (controls) controls.hidden = !selected && !buildKind;
   const removeButton = $<HTMLButtonElement>('remove-landscape');
   removeButton.disabled = !selected || selected.id === gardenPlacementId;
+  $<HTMLButtonElement>('duplicate-landscape').disabled = !selected || selected.id === gardenPlacementId;
 }
 
 $<HTMLSelectElement>('landscape-object-select').addEventListener('change', event => {
@@ -829,17 +916,27 @@ function openBuild() {
 }
 
 $('finish-building').onclick = () => setBuilding(false);
+$('collapse-building').onclick = () => {
+  const collapsed = buildPalette.classList.toggle('is-collapsed');
+  $('collapse-building').setAttribute('aria-expanded', String(!collapsed));
+  $('collapse-building').textContent = collapsed ? 'بازکردن ابزار' : 'جمع‌کردن ابزار';
+};
 $('rotate-landscape-left').onclick = () => rotatePlacement(-1);
 $('rotate-landscape-right').onclick = () => rotatePlacement(1);
 $('remove-landscape').onclick = () => removeSelectedPlacement();
+$('duplicate-landscape').onclick = () => {
+  const current = selectedPlacement(); if (!current || current.id === gardenPlacementId) return;
+  selectedLandscapeId = null; buildKind = current.kind; buildRotation = current.rotation;
+  updatePlacementPreviewAt({ x: current.x + landscapeFootprintRadii[current.kind] * 2 + .5, z: current.z });
+  syncBuildControls(); setPlacementMessage('نمونهٔ مشابه آماده است؛ جای خالی را انتخاب کن.');
+};
 
 function rotatePlacement(direction: number) {
   if (!activePlacementSpec()) return;
   buildRotation = stepPlacementRotation(buildRotation, direction);
   const selected = selectedPlacement();
   if (selected && selected.id !== gardenPlacementId) {
-    state = moveLandscapePlacement(state, selected.id, selected.x, selected.z, buildRotation);
-    save();
+    commitEdit(moveLandscapePlacement(state, selected.id, selected.x, selected.z, buildRotation));
     setPlacementMessage('سازه چرخید؛ می‌توانی جای تازه‌ای هم برایش انتخاب کنی.');
   } else {
     setPlacementMessage('چرخش پیش‌نمایش آماده است؛ روی چمن بزن تا جایش ثبت شود.');
@@ -850,7 +947,7 @@ function rotatePlacement(direction: number) {
 
 function removeSelectedPlacement() {
   if (!selectedLandscapeId || selectedLandscapeId === gardenPlacementId) return;
-  state = removeLandscapePlacement(state, selectedLandscapeId);
+  commitEdit(removeLandscapePlacement(state, selectedLandscapeId));
   selectedLandscapeId = null;
   save();
   districtWorld.setLandscapePreview(null);
@@ -927,6 +1024,7 @@ function updateCompanionIdleAwareness(now: number) {
 }
 
 function triggerCompanionIdleReaction(now: number) {
+  if (now < statusProtectedUntil || gor.userData.waiting) return;
   const dist = angel.position.distanceTo(gor.position);
   if (dist > IDLE_AFFECTION_MAX_DISTANCE) return;
 
@@ -952,9 +1050,9 @@ function triggerCompanionIdleReaction(now: number) {
     gor.userData.emoteUntil = now + 3500;
     setStatus('گوراستاخ با نگاهی گرم و پرمهر به تو چشم دوخته است.');
   } else if (idleReactionType === 'sit') {
-    gor.userData.emoteKind = 'sit';
-    gor.userData.emoteUntil = now + 9000;
-    setStatus('گوراستاخ در سکوت کنارت نشست تا با هم استراحت کنید.');
+    gor.userData.emoteKind = 'wave';
+    gor.userData.emoteUntil = now + 3000;
+    setStatus('گوراستاخ در سکوت کنارت مکث کرد.');
   }
 }
 
@@ -963,7 +1061,10 @@ function toggleHandHolding(force?: boolean) {
   markPlayerActive();
   const next = force !== undefined ? force : !handHoldingActive;
   if (next === handHoldingActive) return;
-  handHoldingActive = next;
+  const traversal = { ...createTraversalState(), isFlying: flightState !== 'grounded', isHandHolding: handHoldingActive };
+  const changed = nextHandHolding(traversal, angel.position.distanceTo(gor.position), 2.35);
+  if (next && !changed.isHandHolding) { setStatus('برای دست‌گرفتن روی زمین به همراهت نزدیک شو.'); return; }
+  handHoldingActive = next ? changed.isHandHolding : false;
   if (handHoldingActive) {
     audioEngine.playHandholdChime();
     const heading = (angel.userData.direction as T.Vector3).clone().setY(0);
@@ -990,14 +1091,18 @@ function toggleFlight(force?: boolean) {
   markPlayerActive();
   const isFlying = flightState !== 'grounded';
   const shouldFly = force !== undefined ? force : !isFlying;
+  if (shouldFly && angel.position.distanceTo(gor.position) > 2.35) { setStatus('برای پرواز دونفره به همراهت نزدیک شو.'); return; }
   if (shouldFly === isFlying) return;
+  const flightTransition = nextFlight({ ...createTraversalState(), isFlying, isHandHolding: handHoldingActive }, 4);
+  if (handHoldingActive) toggleHandHolding(false);
+  gor.userData.waiting = false;
 
   const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
   const ascendBtn = $<HTMLButtonElement>('flight-ascend-btn');
   const descendBtn = $<HTMLButtonElement>('flight-descend-btn');
   if (shouldFly) {
-    flightState = 'ascending';
-    targetAltitude = 4.0;
+    flightState = flightTransition.flightState;
+    targetAltitude = flightTransition.targetAltitude;
     audioEngine.playFlightTakeoff();
     flightBtn?.setAttribute('aria-pressed', 'true');
     if (flightBtn) flightBtn.textContent = 'فرود';
@@ -1006,6 +1111,10 @@ function toggleFlight(force?: boolean) {
     fx.updateRibbonTrails(angel.position, gor.position, true);
     setStatus('پرواز دونفره آغاز شد؛ با کلیدهای Space و C یا دکمه‌های اوج و فرود ارتفاع را تنظیم کنید.');
   } else {
+    const landing = resolveObstacleCollision(angel.position, .65, districtWorld.obstacles);
+    const companionLanding = resolveObstacleCollision(gor.position, .65, districtWorld.obstacles);
+    angel.position.x = landing.x; angel.position.z = landing.z;
+    gor.position.x = companionLanding.x; gor.position.z = companionLanding.z;
     flightState = 'descending';
     targetAltitude = 0.0;
     flightBtn?.setAttribute('aria-pressed', 'false');
@@ -1032,6 +1141,7 @@ function showRomanceVignette(assetIndex: number = 0) {
 }
 
 function triggerEmbraceAction() {
+  if (flightState !== 'grounded' || angel.position.distanceTo(gor.position) > 2.35) { setStatus('برای آغوش روی زمین نزدیک هم بایستید.'); closeDialog(); return; }
   cancelCompanionMoments();
   closeDialog();
   markPlayerActive();
@@ -1081,11 +1191,21 @@ const socialLines: Record<'wave' | 'sit' | 'walk', string[]> = {
   walk: ['دست در دست و شانه به شانه قدم می‌زنید.', 'گردش آرام و دل‌نشین در دشت.', 'کنار هم در سایه‌روشن دشت راه می‌روید.'],
 };
 function socialAction(kind: 'wave' | 'sit' | 'walk') {
+  if (angel.position.distanceTo(gor.position) > 2.35) { closeDialog(); setStatus('اول به همراهت نزدیک شو.'); return; }
+  if (kind === 'sit' && flightState !== 'grounded') { closeDialog(); setStatus('برای نشستن ابتدا فرود بیا.'); return; }
+  if (kind === 'sit') {
+    const seats = [{ x: -9, z: 14 }, { x: 5, z: 14 }, { x: -22, z: -5.2 }];
+    const seat = seats.find(point => Math.hypot(point.x - angel.position.x, point.z - angel.position.z) < 3);
+    if (!seat) { closeDialog(); setStatus('برای نشستن کنار نیمکت باغ یا ایوان خانه برو.'); return; }
+    clearMovementTarget();
+    angel.position.set(seat.x - .45, planetElevation(seat.x, seat.z), seat.z);
+    gor.position.set(seat.x + .45, planetElevation(seat.x, seat.z), seat.z);
+  }
   cancelCompanionMoments();
   closeDialog();
   markPlayerActive();
   const line = socialLines[kind][socialBeat++ % socialLines[kind].length];
-  const until = performance.now() + (kind === 'walk' ? 9000 : 1600);
+  const until = performance.now() + (kind === 'walk' ? 9000 : kind === 'sit' ? 30000 : 1600);
   angel.userData.emoteUntil = until;
   gor.userData.emoteUntil = until;
   angel.userData.emoteKind = kind;
@@ -1117,6 +1237,8 @@ function peopleDialog(returnFocus: HTMLElement = $('people-action')) {
       <button data-social="sit">کمی بنشینیم</button>
       <button data-social="walk">با هم قدم بزنیم</button>
       <button id="appearance-action">تغییر ظاهر</button>
+      <button id="gift-action">هدیهٔ گل</button>
+      <button id="wait-action">${gor.userData.waiting ? 'دنبالم بیا' : 'اینجا منتظر بمان'}</button>
     </div>`,
     returnFocus,
   );
@@ -1137,6 +1259,8 @@ function peopleDialog(returnFocus: HTMLElement = $('people-action')) {
     };
   }
   $('appearance-action').onclick = appearanceDialog;
+  $('gift-action').onclick = () => flowerDialog();
+  $('wait-action').onclick = () => { gor.userData.waiting = !gor.userData.waiting; closeDialog(); setStatus(gor.userData.waiting ? 'همراهت اینجا منتظر می‌ماند.' : 'همراهت دوباره دنبالت می‌آید.'); };
 }
 function appearanceDialog() {
   const who = overlay.dataset.appearanceWho === 'gor' ? 'gor' : 'angel';
@@ -1168,6 +1292,107 @@ function appearanceDialog() {
     };
   }
 }
+function flowerDialog() {
+  if (ownGarden.editing) ownGarden.close();
+  const available = (Object.keys(species) as (keyof typeof species)[]).filter(kind => (state.life.flowers[kind] ?? 0) > 0);
+  dialog('گل‌های چیده‌شده', available.length ? '<p>یک گل را هدیه بده یا نزدیک خودت در گلدان بگذار؛ گلدان با بازگشت تو باقی می‌ماند.</p>' : '<p>ابتدا یک گل شکفته را در باغ انتخاب کن و «چیدن» را بزن.</p>',
+    available.map(kind => `<fieldset><legend>${species[kind].name} · ${state.life.flowers[kind]}</legend><button data-flower="${kind}" data-use="vase">در گلدان بگذار</button><button data-flower="${kind}" data-use="gift">هدیه به همراه</button></fieldset>`).join('')
+      + state.life.vases.map(vase => `<fieldset><legend>گلدان ${species[vase.species].name}</legend><button data-vase-move="${vase.id}">آوردن به این گوشه</button><button data-vase-remove="${vase.id}">برگرداندن گل</button></fieldset>`).join(''), $('people-action'));
+  for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-vase-move], [data-vase-remove]')) button.onclick = () => {
+    const id = button.dataset.vaseMove ?? button.dataset.vaseRemove;
+    const vase = state.life.vases.find(item => item.id === id); if (!vase) return;
+    if (flightState !== 'grounded') { setStatus('ابتدا فرود بیا.'); return; }
+    if (button.dataset.vaseRemove) {
+      state = { ...state, life: { ...state.life, vases: state.life.vases.filter(item => item.id !== id), flowers: { ...state.life.flowers, [vase.species]: Math.min(99, (state.life.flowers[vase.species] ?? 0) + 1) } } };
+    } else {
+      const point = resolveObstacleCollision({ x: angel.position.x + 1, z: angel.position.z + 1 }, .4, districtWorld.obstacles);
+      if (Math.hypot(point.x, point.z) > 80 || state.life.vases.some(item => item.id !== id && Math.hypot(item.x - point.x, item.z - point.z) < .65)) { setStatus('اینجا جای گلدان نیست.'); return; }
+      state = { ...state, life: { ...state.life, vases: state.life.vases.map(item => item.id === id ? { ...item, ...point } : item) } };
+    }
+    editHistory.clear(); save(); flowerDialog();
+  };
+  for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-flower]')) button.onclick = () => {
+    const kind = button.dataset.flower as keyof typeof species;
+    const use = button.dataset.use as 'gift' | 'vase';
+    if (flightState !== 'grounded') { setStatus('برای استفاده از گل ابتدا فرود بیا.'); return; }
+    if (use === 'gift' && angel.position.distanceTo(gor.position) > 2.35) { setStatus('همراهت دور است؛ اول نزدیکش شو.'); return; }
+    const point = resolveObstacleCollision({ x: angel.position.x + 1, z: angel.position.z + 1 }, .4, districtWorld.obstacles);
+    const vase: FlowerVase = { id: crypto.randomUUID(), species: kind, ...point };
+    if (state.life.vases.some(item => Math.hypot(item.x - point.x, item.z - point.z) < .65) && use === 'vase') { setStatus('اینجا گلدان هست؛ کمی جابه‌جا شو.'); return; }
+    const next = useFlower(state, kind, use, vase);
+    if (next === state) { setStatus('این گل یا جای گلدان در دسترس نیست.'); return; }
+    editHistory.clear(); state = next; save(); closeDialog();
+    if (use === 'gift') {
+      faceDirection(gor, angel.position.clone().sub(gor.position).setY(0));
+      gor.userData.emoteKind = 'wave'; gor.userData.emoteUntil = performance.now() + 2400;
+      audioEngine.playHandholdChime(); setStatus(`گوراستاخ ${species[kind].name} را گرفت: «این رنگ کنار تو زیباتر است.»`);
+    } else setStatus('گلدان به این گوشه اضافه شد.');
+  };
+}
+function placeDialog() {
+  const place = activeMoodPlace;
+  if (!place) { setStatus('به خانه، گلخانه، بیشه یا میدان نزدیک شو.'); return; }
+  if (place === 'garden') { flowerDialog(); return; }
+  if (place === 'home') {
+    dialog('خانهٔ ما', '<p>از درِ بازِ ایوان وارد اتاق شو؛ سقف هنگام ورود کنار می‌رود. چیدمان دلخواهت رایگان و ماندگار است.</p>', '<button id="home-enter">قدم‌زدن به داخل خانه</button><button data-home="tea">چیدمان چای دونفره</button><button data-home="reading">چیدمان مطالعه</button><button id="home-flowers">گل‌های خانه</button>', $('place-action'));
+    $('home-enter').onclick = () => {
+      if (flightState !== 'grounded') { setStatus('برای ورود به خانه ابتدا فرود بیا.'); return; }
+      const route = planWalkableRoute(angel.position, { x: -22, z: -10 }, worldBounds(), districtWorld.obstacles, { cellSize: .5, approachRadius: .2 });
+      if (!route) { setStatus('راه درِ خانه بسته است؛ سازهٔ جلوی آن را جابه‌جا کن.'); return; }
+      cancelCompanionMoments(); clearMovementTarget(); keys.clear(); markPlayerActive();
+      target = route[0] ? new T.Vector3(route[0].x, 0, route[0].z) : null;
+      walkingWaypoints = route.slice(1).map(point => new T.Vector3(point.x, 0, point.z));
+      closeDialog(); setStatus('از درِ ایوان به داخل خانه قدم می‌زنی.');
+    };
+    for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-home]')) button.onclick = () => {
+      state = { ...state, life: { ...state.life, homeArrangement: button.dataset.home as 'tea' | 'reading' } };
+      save(); closeDialog(); setStatus('چیدمان اتاق خانه تغییر کرد.');
+    };
+    $('home-flowers').onclick = () => flowerDialog();
+    return;
+  }
+  if (place === 'greenhouse') {
+    dialog('میز رنگ گلخانه', '<p>رنگ حال‌وهوای باغ را انتخاب کن؛ رایگان است و گل‌های فعلی عوض نمی‌شوند.</p>', Object.entries(species).map(([kind, spec]) => `<button data-greenhouse="${kind}">${spec.name}</button>`).join(''), $('place-action'));
+    for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-greenhouse]')) button.onclick = () => {
+      state = { ...state, life: { ...state.life, greenhouseColor: button.dataset.greenhouse as keyof typeof species } }; save(); closeDialog(); setStatus('رنگ نور باغ از میز گلخانه تغییر کرد.');
+    };
+  } else if (place === 'village') {
+    dialog('همسایه‌های میدان', '<p>آوا باغبان: «گل‌های چیده‌شده‌ات را در گلدان بگذار؛ باغت داستان تو را نگه می‌دارد.»</p><p>نیما نگهبان بیشه: «کنار آب مکث کن؛ صدای دشت آنجا فرق می‌کند.»</p>', '<button id="neighbor-wave">سلام به همسایه‌ها</button>', $('place-action'));
+    $('neighbor-wave').onclick = () => { closeDialog(); audioEngine.playHandholdChime(); setStatus('آوا و نیما با لبخند جواب سلامت را دادند.'); };
+  } else {
+    dialog('مکث کنار طبیعت', '<p>اینجا می‌توانی کنار همراهت مکث کنی و صدای طبیعت را بشنوی.</p>', '<button id="nature-rest">کمی استراحت</button>', $('place-action'));
+    $('nature-rest').onclick = () => { closeDialog(); clearMovementTarget(); keys.clear(); markPlayerActive(); setStatus('کنار طبیعت مکث کردی؛ با حرکت دوباره به گردش ادامه بده.'); };
+  }
+}
+$('place-action').onclick = placeDialog;
+$('photo-action').onclick = () => {
+  if (ownGarden.editing) ownGarden.close(); if (building) setBuilding(false);
+  dialog('عکس دونفره', '<p>کادر را مستقل از شخصیت تنظیم کن؛ خروجی فقط منظره است، بدون رابط.</p>', '<div class="photo-controls" role="group" aria-label="تنظیم کادر عکس"><button data-photo-pan="up" aria-label="کادر به شمال">↑</button><button data-photo-pan="left" aria-label="کادر به غرب">←</button><button id="photo-center">وسط دو نفر</button><button data-photo-pan="right" aria-label="کادر به شرق">→</button><button data-photo-pan="down" aria-label="کادر به جنوب">↓</button><button id="photo-near">نزدیک‌تر</button><button id="photo-far">دورتر</button></div><button id="photo-wave">ژست سلام</button><button id="photo-capture">ذخیرهٔ عکس</button>', $('photo-action'));
+  photoView = { zoom, wide: wideView };
+  const updatePhotoControls = () => {
+    overlay.dataset.photoX = String(photoFocus!.x); overlay.dataset.photoZ = String(photoFocus!.z);
+    overlay.dataset.photoZoom = String(zoom);
+  };
+  const centerPhoto = () => { photoFocus = { x: (angel.position.x + gor.position.x) / 2, z: (angel.position.z + gor.position.z) / 2 }; updatePhotoControls(); };
+  centerPhoto(); overlay.classList.add('photo-framing');
+  $('photo-center').onclick = centerPhoto;
+  for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-photo-pan]')) button.onclick = () => {
+    const direction = button.dataset.photoPan;
+    photoFocus = panEditingCamera(photoFocus!, direction === 'left' ? -2 : direction === 'right' ? 2 : 0,
+      direction === 'up' ? -2 : direction === 'down' ? 2 : 0, worldBounds().r);
+    updatePhotoControls();
+  };
+  $('photo-near').onclick = () => { zoom = T.MathUtils.clamp(zoom - .12, .68, 1.4); updatePhotoControls(); };
+  $('photo-far').onclick = () => { zoom = T.MathUtils.clamp(zoom + .12, .68, 1.4); updatePhotoControls(); };
+  $('photo-wave').onclick = () => { const until = performance.now() + 15000; for (const actor of [angel, gor]) { actor.userData.emoteKind = 'wave'; actor.userData.emoteUntil = until; } };
+  $('photo-capture').onclick = () => {
+    // Apply the latest framing even when capture follows a pan in the same frame.
+    lastFrame = 0; animate();
+    renderer.render(scene, camera);
+    renderer.domElement.toBlob(blob => { if (blob) { downloadFile(blob, 'dream-caravan-photo.png'); setStatus('عکس منظره آماده شد.'); } else setStatus('مرورگر نتوانست عکس بسازد.'); }, 'image/png');
+    closeDialog();
+  };
+};
 renderer.domElement.addEventListener('contextmenu', event => {
   event.preventDefault();
 });
@@ -1209,7 +1434,12 @@ function openGraphicsSettings() {
         <span>حالت کم‌مصرف</span>
       </label>
       <p>حالت کم‌مصرف وضوح تصویر و سایه‌ها را کاهش می‌دهد.</p>
-      <p id="graphics-quality-status" role="status" aria-live="polite"></p>
+       <p id="graphics-quality-status" role="status" aria-live="polite"></p>
+       <label for="audio-volume">صدای بازی <input id="audio-volume" type="range" min="0" max="1" step="0.05" value="${audioVolume}"></label>
+       <button id="mute-audio">${audioVolume ? 'قطع صدا' : 'روشن‌کردن صدا'}</button>
+       <button id="export-save">دریافت فایل ذخیره</button>
+       <label for="import-save">بازیابی ذخیره (جایگزین باغ فعلی)<input id="import-save" type="file" accept=".json,application/json"></label>
+       <p id="import-status" role="status" aria-live="polite"></p>
     </div>`,
     '',
     $('graphics-action'),
@@ -1224,6 +1454,20 @@ function openGraphicsSettings() {
     updateStatus();
   };
   updateStatus();
+  const volume = $<HTMLInputElement>('audio-volume');
+  const setVolume = (value: number) => { audioVolume = value; audioEngine.setVolume(value); volume.value = String(value); $('mute-audio').textContent = value ? 'قطع صدا' : 'روشن‌کردن صدا'; try { localStorage.setItem(`${gameSaveKey}:volume`, String(value)); } catch {} };
+  volume.oninput = () => setVolume(Number(volume.value));
+  $('mute-audio').onclick = () => setVolume(audioVolume ? 0 : 1);
+  $('export-save').onclick = () => downloadFile(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), 'dream-caravan-save.json');
+  $<HTMLInputElement>('import-save').onchange = async event => {
+    const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return;
+    try {
+      if (file.size > 1_000_000) throw new Error('فایل ذخیره بیش از حد بزرگ است.');
+      const imported = importSaveFile(await file.text());
+      if (!confirm('فایل معتبر است. باغ فعلی جایگزین شود؟ ابتدا می‌توانی از آن خروجی بگیری.')) return;
+      state = imported; editHistory.clear(); save(); ownGarden.redraw(); $('import-status').textContent = 'فایل بازیابی شد.';
+    } catch (error) { $('import-status').textContent = error instanceof Error ? error.message : 'بازیابی انجام نشد.'; }
+  };
   toggle.focus();
 }
 $('graphics-action').onclick = openGraphicsSettings;
@@ -1293,7 +1537,7 @@ function updatePlacementPreviewAt(point: { x: number; z: number }) {
     point,
     { x: bounds.x, z: bounds.z, radius: bounds.r },
     radius,
-    0.25,
+    $<HTMLInputElement>('snap-landscape').checked ? .5 : 0,
   );
   const valid = isPlacementClear(candidate, radius, placementBlockers(spec.id, spec.kind), LANDSCAPE_PLACEMENT_CLEARANCE);
   placementCandidate = { ...candidate, kind: spec.kind, rotation: buildRotation, valid };
@@ -1376,8 +1620,7 @@ function commitLandscapeAtCandidate() {
       setPlacementMessage('جای تازه برای این سازه مناسب نیست.', 'blocked');
       return;
     }
-    state = next;
-    save();
+    commitEdit(next);
     setPlacementMessage(spec.kind === 'garden-bed'
       ? 'باغچه جابه‌جا شد؛ گل‌ها و رشدشان حفظ شدند.'
       : 'سازه جابه‌جا شد و جای تازه‌اش ذخیره شد.');
@@ -1389,8 +1632,7 @@ function commitLandscapeAtCandidate() {
       setPlacementMessage('سازه در این نقطه ثبت نشد؛ جای دیگری را امتحان کن.', 'blocked');
       return;
     }
-    state = next;
-    save();
+    commitEdit(next);
     setPlacementMessage('به دشت اضافه شد؛ می‌توانی مورد بعدی را هم آزادانه بچینی.');
   }
   syncBuildControls();
@@ -1441,30 +1683,40 @@ renderer.domElement.addEventListener('pointerup', event => {
     else setStatus('گوراستاخ کمی دورتر است؛ با حرکت به او نزدیک شو.');
     return;
   }
+  const residentName = districtWorld.pickResident(raycaster);
+  if (residentName) {
+    if (activeMoodPlace !== 'village') { setStatus('برای گفت‌وگو به میدان نزدیک شو.'); return; }
+    dialog(residentName, `<p>${districtWorld.residentMessage(residentName, state)}</p>`, '<button id="resident-greet">سلام</button>');
+    $('resident-greet').onclick = () => { closeDialog(); setStatus(`${residentName} با لبخند جواب داد.`); audioEngine.playHandholdChime(); };
+    return;
+  }
   const hit = groundHit;
   if (!hit) return;
   cancelCompanionMoments();
   markPlayerActive();
   clearMovementTarget();
-  target = hit.point.clone();
-  target.y = planetElevation(target.x, target.z);
-  const bounds = worldBounds();
-  const dx = target.x - bounds.x, dz = target.z - bounds.z, distance = Math.hypot(dx, dz);
-  if (distance > bounds.r) { target.x = bounds.x + dx * bounds.r / distance; target.z = bounds.z + dz * bounds.r / distance; }
+  if (flightState !== 'grounded') target = hit.point.clone();
+  else {
+    const route = planWalkableRoute(angel.position, hit.point, worldBounds(), districtWorld.obstacles, { approachRadius: 1.5 });
+    if (!route) { setStatus('این نقطه مسیر امن ندارد؛ نقطه‌ای روی چمن انتخاب کن.'); return; }
+    target = route[0] ? new T.Vector3(route[0].x, 0, route[0].z) : null;
+    walkingWaypoints = route.slice(1).map(point => new T.Vector3(point.x, 0, point.z));
+  }
 });
 
 window.addEventListener('keydown', event => {
   if (!overlay.hidden) {
     if (event.key === 'Escape') closeDialog();
     if (event.key === 'Tab') {
-      const buttons = [...overlay.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+      const buttons = focusableElements(overlay);
       const first = buttons[0], last = buttons.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
     return;
   }
-  const key = event.key.toLowerCase();
+  const key = controlKey(event);
+  if ((event.target as HTMLElement)?.closest?.('input, select, textarea, [contenteditable="true"]')) return;
   if (building) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1476,7 +1728,13 @@ window.addEventListener('keydown', event => {
     // Enter on any palette button must remain the browser's native activation
     // key; Enter commits only while the world or page itself has focus.
     if (event.key === 'Enter' && target?.closest('button')) return;
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
+    if (event.altKey && movementKeys.includes(key)) {
+      event.preventDefault();
+      panBuildCamera(key === 'a' || key === 'ArrowLeft' ? -4 : key === 'd' || key === 'ArrowRight' ? 4 : 0,
+        key === 'w' || key === 'ArrowUp' ? -4 : key === 's' || key === 'ArrowDown' ? 4 : 0);
+      return;
+    }
+    if (movementKeys.includes(key)) {
       const base = placementCandidate ?? selectedPlacement() ?? { x: angel.position.x, z: angel.position.z };
       const step = event.shiftKey ? 2 : 0.5;
       const next = { x: base.x, z: base.z };
@@ -1527,17 +1785,17 @@ window.addEventListener('keydown', event => {
     toggleHandHolding();
     return;
   }
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
+  if (movementKeys.includes(key) && !ownGarden.editing) {
     event.preventDefault();
     cancelCompanionMoments();
     markPlayerActive();
-    keys.add(event.key);
+    keys.add(key);
     clearMovementTarget();
   }
   if (key === 'e' && nearestCompanion) $('interact').click();
   if (event.key === 'Escape' && ownGarden.editing) ownGarden.close();
 });
-window.addEventListener('keyup', event => keys.delete(event.key));
+window.addEventListener('keyup', event => keys.delete(controlKey(event)));
 window.addEventListener('blur', () => keys.clear());
 
 function resize() {
@@ -1553,6 +1811,12 @@ renderer.domElement.addEventListener('wheel', event => {
 }, { passive: false });
 
 const clock = new T.Clock();
+const frameSamples: number[] = [];
+(window as unknown as { __caravanPerformance: { stats(): object } }).__caravanPerformance = {
+  stats: () => ({ renderWorkMs: frameSamples.length ? frameSamples.reduce((a, b) => a + b, 0) / frameSamples.length : 0,
+    drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+    textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries, quality: graphicsQuality }),
+};
 let lastFrame = 0;
 let viewScale = 1;
 function animate() {
@@ -1561,6 +1825,7 @@ function animate() {
   if (now - lastFrame < frameInterval) return;
   lastFrame = now;
   const dt = T.MathUtils.clamp(clock.getDelta(), 0, .75);
+  const priorPlayerPosition = angel.position.clone();
   elapsed += dt;
   const atmosphere = sampleAmbience(elapsed);
   fx.setNightIntensity(computeNightIntensity(atmosphere.phase, atmosphere.phaseProgress));
@@ -1572,7 +1837,7 @@ function animate() {
   const moveSpeed = isFlying ? 5.4 : 4.2;
   const movement = new T.Vector3();
 
-  if (overlay.hidden && !ownGarden.editing) {
+  if (overlay.hidden && !ownGarden.editing && !building) {
     if (target) {
       movement.copy(target).sub(angel.position).setY(0);
       if (movement.length() < .2) {
@@ -1602,6 +1867,7 @@ function animate() {
         }
       }
       markPlayerActive(now);
+      for (const actor of [angel, gor]) { actor.userData.emoteUntil = 0; actor.userData.emoteKind = 'none'; }
       const stepDist = target
         ? Math.min(dt * moveSpeed, target.clone().setY(angel.position.y).distanceTo(angel.position))
         : dt * moveSpeed;
@@ -1701,10 +1967,23 @@ function animate() {
             faceDirection(gor, toAngel.normalize());
           }
         }
-      } else if (follow.length() > 1.45) {
-        const step = Math.min(dt * 3.4, follow.length() - 1.25);
-        gor.position.addScaledVector(follow.normalize(), step);
-        if (follow.lengthSq() > .02) faceDirection(gor, follow.normalize());
+      } else if (!gor.userData.waiting && follow.length() > 1.45) {
+        if (isFlying) {
+          gor.position.addScaledVector(follow.normalize(), Math.min(dt * 3.4, follow.length() - 1.25));
+        } else {
+          if (now - companionRouteAt > 1200) {
+            companionRouteAt = now;
+            companionRoute = (planWalkableRoute(gor.position, angel.position, worldBounds(), districtWorld.obstacles, { approachRadius: 1.5 }) ?? [])
+              .map(point => new T.Vector3(point.x, 0, point.z));
+          }
+          while (companionRoute.length && Math.hypot(companionRoute[0].x - gor.position.x, companionRoute[0].z - gor.position.z) < .2) companionRoute.shift();
+          const next = companionRoute[0];
+          if (next) {
+            const direction = next.clone().sub(gor.position).setY(0);
+            gor.position.addScaledVector(direction.clone().normalize(), Math.min(dt * 3.4, direction.length()));
+            faceDirection(gor, direction);
+          }
+        }
       }
 
       if (!isFlying || baseAltitude < 1.2) {
@@ -1718,6 +1997,15 @@ function animate() {
       }
     }
   }
+
+  if (target && !isFlying && overlay.hidden) {
+    const traveled = Math.hypot(angel.position.x - priorPlayerPosition.x, angel.position.z - priorPlayerPosition.z);
+    stuckFor = traveled < .005 ? stuckFor + dt : 0;
+    if (stuckFor > 2) { clearMovementTarget(); stuckFor = 0; setStatus('مسیر تغییر کرده؛ مقصد دیگری انتخاب کن.'); }
+  } else stuckFor = 0;
+  const destination = walkingWaypoints.at(-1) ?? target;
+  destinationMarker.visible = !!destination && !building && !ownGarden.editing;
+  if (destination) destinationMarker.position.set(destination.x, planetElevation(destination.x, destination.z) + .08, destination.z);
 
   const landmarkArrival = landmarkArrivals.update(angel.position.x, angel.position.z, elapsed);
   updatePlaceMood(angel.position.x, angel.position.z);
@@ -1757,11 +2045,13 @@ function animate() {
   characterMidpoint.copy(angel.position).add(gor.position).multiplyScalar(0.5);
   const focus = ownGarden.editing
     ? ownGarden.focus.clone().setY(0)
+    : photoFocus ? new T.Vector3(photoFocus.x, calculateCameraFocusY(characterMidpoint.y, .82), photoFocus.z)
+    : building ? new T.Vector3(editingCameraPoint.x, planetElevation(editingCameraPoint.x, editingCameraPoint.z), editingCameraPoint.z)
     : new T.Vector3(characterMidpoint.x, calculateCameraFocusY(characterMidpoint.y, 0.82), characterMidpoint.z);
 
-  cameraFocus.lerp(focus, reducedMotion ? 1 : 1 - Math.exp(-dt * 2.2));
+  cameraFocus.lerp(focus, reducedMotion || photoFocus ? 1 : 1 - Math.exp(-dt * 2.2));
   cameraLeadTarget.set(0, 0, 0);
-  if (!ownGarden.editing && movement.lengthSq() > 0.04) cameraLeadTarget.copy(movement).setY(0).multiplyScalar(0.85);
+  if (!ownGarden.editing && !building && movement.lengthSq() > 0.04) cameraLeadTarget.copy(movement).setY(0).multiplyScalar(0.85);
   cameraLead.lerp(cameraLeadTarget, reducedMotion ? 1 : 1 - Math.exp(-dt * 1.5));
   if (ownGarden.editing && innerWidth < 700) camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * .18, innerWidth, innerHeight);
   else if (camera.view?.enabled) camera.clearViewOffset();
@@ -1814,12 +2104,13 @@ function animate() {
     const kind = actor.userData.emoteKind as string;
     const sitting = emote && kind === 'sit';
     const pulse = emote && !reducedMotion ? Math.sin(now * .018) : 0;
-    sprite.scale.y = sitting ? 2.48 : 2.8;
+    // Keep approved proportions: sprite art is not a skeletal sitting animation.
+    sprite.scale.y = 2.8;
     ghost.scale.copy(sprite.scale);
 
     // Synchronized bobbing
     const stepping = !isFlying && movement.lengthSq() > 0.04;
-    const bob = isFlying
+    const bob = reducedMotion ? 0 : isFlying
       ? Math.sin(elapsed * 2.2 + index * 0.3) * 0.028
       : stepping
       ? Math.abs(Math.sin(walkDistance * 7.4 + index * 0.7)) * 0.055
@@ -1867,8 +2158,11 @@ function animate() {
   const interaction = $<HTMLButtonElement>('interact');
   interaction.disabled = !nearestCompanion;
   interaction.textContent = nearestCompanion ? 'سلام' : 'نزدیک شو';
+  $('place-action').textContent = activeMoodPlace ? districts[activeMoodPlace].name : 'اینجا';
   interaction.setAttribute('aria-label', nearestCompanion ? 'صحبت با گوراستاخ' : 'برای صحبت، به گوراستاخ نزدیک شو');
   districtWorld.tick(elapsed, reducedMotion, atmosphere.windStrength);
+  districtWorld.updateHomeView(angel.position.x, angel.position.z, reducedMotion);
+  gameRoot.dataset.insideHome = String(districtWorld.root('home').userData.inside);
   fauna.update(elapsed, dt, reducedMotion);
   fx.update(dt, now);
   fx.updateRibbonTrails(angel.position, gor.position, isFlying);
@@ -1941,6 +2235,8 @@ function animate() {
   const waterDistance = Math.hypot(angel.position.x, angel.position.z);
   audioEngine.updateAmbience(atmosphere.windStrength, atmosphere.rainStrength, waterDistance);
   renderer.render(scene, camera);
+  frameSamples.push(performance.now() - now);
+  if (frameSamples.length > 120) frameSamples.shift();
 }
 
 function applyAppearance() {
@@ -1965,6 +2261,7 @@ function updateWorld() {
   renderer.shadowMap.needsUpdate = true;
   syncGardenTransform();
   districtWorld.sync(state);
+  lifeWorld.sync(state);
   applyAppearance();
 }
 

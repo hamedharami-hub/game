@@ -6,7 +6,7 @@ const expectNoHorizontalOverflow = async (page: import('@playwright/test').Page)
 };
 
 test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
-  test('390px mobile viewport: five primary header actions fit on row 1 and flight works from companions', async ({ page }) => {
+  test('390px mobile viewport: four readable primary actions and separate flight controls', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const errors: string[] = [];
     page.on('pageerror', err => errors.push(err.message));
@@ -32,7 +32,6 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       '#build-action',
       '#people-action',
       '#map-action',
-      '#camera-view',
     ];
 
     let rowY: number | null = null;
@@ -50,6 +49,8 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       // Mission Invariant 2: x-bounds strictly within screen [0, 390]
       expect(box!.x, `${id} left edge off screen`).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width, `${id} right edge overflowed viewport`).toBeLessThanOrEqual(390);
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
 
       // Verify they are on the same vertical baseline
       if (rowY === null) {
@@ -74,7 +75,9 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
       expect(box, `${id} should remain visible while flying`).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-      expect(box!.y).toBeLessThan(40);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
     }
 
     await page.locator('#people-action').click();
@@ -190,7 +193,7 @@ test.describe('Mobile 390px & Boundary Viewport Layout Verification', () => {
     await page.locator('#land-map-mount .land-map__button[data-landmark-id="greenhouse"]').click();
 
     await expect(page.locator('#overlay')).toBeHidden();
-    await expect(page.locator('#ambient-status')).toHaveText('در راه گلخانهٔ پیوند.');
+    await expect(page.locator('#ambient-status')).toHaveText(/^(در راه|رسیدی به) گلخانهٔ پیوند\.$/);
     await expect(page.locator('#ambient-status')).toHaveText('رسیدی به گلخانهٔ پیوند.', { timeout: 9000 });
     expect(errors).toEqual([]);
   });
