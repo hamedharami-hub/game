@@ -93,7 +93,10 @@ const BUDGET = Object.freeze({
   // Explicit feature baseline, not an optimization claim; deploy cap unchanged.
   // Photo framing + resident routines measured 688,799 B; gzip 192,875 B.
   // No new dependencies/assets. Gzip and deployment caps unchanged.
-  jsRawBytes: 690_000,
+  // Dream landscape + real-coordinate map: 694,205 raw / 188,421 gzip.
+  // Explicit raw feature rebaseline (+10 KB cap); gzip cap remains unchanged.
+  // Terser is build-time only and reduces gzip vs previous 192,970 B candidate.
+  jsRawBytes: 700_000,
   jsGzipBytes: 193_000,
   distBytes: 27_500_000,
   maxArtPng: 0,

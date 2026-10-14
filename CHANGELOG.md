@@ -100,3 +100,37 @@
 - Standalone generation no longer automatically promotes an unvalidated release.
 - JS budget deliberately rebaselined for added features without new dependencies: 680 KB raw / 192 KB gzip; deploy cap unchanged.
 - Full house interiors, hybrid breeding, skeletal/multiframe art and real-device performance remain pending; see docs/IMPLEMENTATION_PLAN.fa.md.
+# Dream landscape candidate — 2026-10-13
+
+- Final hardware-backed Chrome suite42900 passes **33/33** in2.2m; latest build passes187 Node tests/artwork/typecheck/all six budgets. Photo reset and touch-target fixes verified. SwiftShader stress/stall failures remain documented; real-phone performance unmeasured. Candidate still unpublished, no release promotion.
+
+- Fix mobile camera-view CSS specificity so real touch targets retain>=44px. Photo frame reset now restores the midpoint captured on entering that photo session, rather than drifting with companion motion; reopening establishes a fresh midpoint. Full latest rebuilt hardware suite pending; no publication.
+
+- Hardware-backed Chrome validation (Adreno/D3D11) completed 30/33 in2.6m; three measured touch-target rounding failures (43.994px instead of44). Increase affected camera/mobile action minimums to45px, preserving all test thresholds; full rebuilt hardware rerun pending. Software-renderer stalls remain a documented limitation.
+
+- Complete 42890 remains red (31 passed / 2 failed). Block grounded idle reactions during flight/descent; reset idle time on landing. Photo capture no longer draws twice or schedules continuous scene draws during PNG encoding; controls/simulation continue. Build/browser verification pending; no publication.
+
+- GPU-gate complete browser run: 32/33 passed; remaining full-catalog concurrent decode stalls under active SwiftShader scene. Asset isolation verifies all 18 atlases; two-worker concurrent active-scene probe still fails. Functional appearance test separates full asset integrity decoding from unchanged actual high-quality play/persistence checks, with identical dimensions/deadlines. Full rerun pending; concurrent stress remains a documented limitation.
+
+- Controlled blank/game/draw-isolation diagnostics identify substantial render-associated input delay under SwiftShader. Add zero-timeout GPU fence gating to avoid queueing unfinished animated frames; simulation/UI and explicit photo capture remain active. Unit coverage added; effectiveness pending browser measurement, no release promotion.
+
+- Latest focused browser run on port 42883 failed all four scenarios, including context-teardown deadlines. Runtime responsiveness changes remain experimental, not confirmed improvements. Build / 184 Node tests pass; no publication or release promotion.
+
+- Avoid repeated unchanged HUD/ARIA writes; leave bounded CPU idle windows between expensive scene draws while retaining simulation and explicit capture. Added render-budget unit tests and idle-HUD browser regression. Build / 184 Node tests pass; focused browser validation runs on port 42883. No release promotion yet.
+
+- Complete port 42880 finished 28 passed / 4 failed; latest candidate remains unpromoted. Four failed flows rerun unchanged with failure tracing on port 42881. Frame-time clamping was investigated but not speculatively removed.
+
+- Desktop terrain/spirit and photo-framing follow-up passed both scenarios on port 42879. Complete latest browser run is active on port 42880 (32 scenarios); not yet release-approved.
+
+- Reuse unchanged reduced-motion photo frames while preserving camera invalidation, active poses, normal play and explicit capture rendering. Lighting transitions in a cached static photo wait for invalidation. Build / 182 Node tests pass; desktop browser checks pending on port 42879. Port 42878 was 2 mobile passes / 2 desktop deadline failures, not a full validation success.
+
+- Visual review caught oversized ivory veins: preserve original radii while stretching veins, spirit crowns and lotus petals. Added a regression against the actual baked vein mesh. Corrected build passes 181 Node tests / all six gates. Port 42877 was 4 passed / 6 failed; new landscape/photo verification runs on port 42878, pending. Candidate remains unpublished.
+
+- Full first landscape browser run: 22 passed / 10 failed (mostly deadlines); no release promotion. Latest build includes the swallow orientation correction and disables compositor backdrop blur in low-power mode; 180 Node tests / all six gates passed. Ten failed scenarios are rerunning unchanged on port 42877, results pending.
+
+- Added a terrain layer to the map: shared-coordinate river/inlet, both lakes, spirit-tree silhouette, north and a walking legend; preserved six keyboard/touch destination controls.
+- Redesigned the grove spirit tree with jade/lavender cloud crowns, an ivory spiral, hanging crystal leaves and a crescent. Saved buildable spirit trees share its palette and crystal motif.
+- Added three batched woodland silhouettes and lotus/reed/ripple scenery to both existing lakes; kept landmark positions, collision footprints and v1 saves unchanged.
+- Replaced rectangular bird wings with swept swallow wings and forked tails, alternating flap/glide with gentle banking. Reduced motion now freezes birds/fish and resets butterfly wings.
+- Switched to build-time Terser (no runtime dependency): candidate measured 694,379 B raw / 188,465 B gzip versus previous 688,963 / 192,970 B. Raw cap explicitly rebaselined from 690,000 to 700,000 B for feature growth; gzip/deploy caps unchanged. This is not a raw-size optimization.
+- Production candidate passed 180 Node tests and six budget checks; full browser validation is pending. A subsequent source-only bird wing orientation correction has 10 focused fauna tests passing and needs a fresh build/browser check before release.

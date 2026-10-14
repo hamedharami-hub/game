@@ -96,5 +96,7 @@ function excludePreservedArtwork(): Plugin {
 }
 
 export default defineConfig({
+  // Build-time only: reclaim space instead of raising the shipped JS caps.
+  build: { minify: 'terser', terserOptions: { module: true, compress: { passes: 3 }, format: { comments: false } } },
   plugins: [excludePreservedArtwork()],
 });

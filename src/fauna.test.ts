@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as T from 'three';
 import {
   calculateButterflyPosition,
   calculateButterflyWingFlap,
@@ -7,7 +8,36 @@ import {
   calculateFishPondPosition,
   createSpiritDeerState,
   updateSpiritDeerState,
+  createFaunaMeshGroup,
 } from './fauna.ts';
+
+test('moon swallow batches stay bounded and all wildlife freezes with reduced motion', () => {
+  const fauna = createFaunaMeshGroup(new T.Scene());
+  const wings = fauna.root.getObjectByName('moon-swallow-wings') as T.InstancedMesh;
+  const tails = fauna.root.getObjectByName('moon-swallow-tails') as T.InstancedMesh;
+  assert.equal(wings.count, 6); assert.equal(tails.count, 3);
+  assert.equal(wings.geometry.getAttribute('position').count, 4);
+  fauna.update(12, .016, true); fauna.root.updateMatrixWorld(true);
+  const left = new T.Matrix4(), right = new T.Matrix4();
+  wings.getMatrixAt(0, left); wings.getMatrixAt(1, right);
+  const body = fauna.root.getObjectByName('moon-swallow-bodies') as T.InstancedMesh;
+  const centerMatrix = new T.Matrix4(); body.getMatrixAt(0, centerMatrix);
+  const center = new T.Vector3().setFromMatrixPosition(centerMatrix);
+  const leftTip = new T.Vector3(.7, 0, -.24).applyMatrix4(left).sub(center);
+  const rightTip = new T.Vector3(.7, 0, -.24).applyMatrix4(right).sub(center);
+  assert.ok(leftTip.x < 0 && rightTip.x > 0, 'wings spread on opposite sides');
+  assert.ok(leftTip.z < 0 && rightTip.z < 0, 'both tapered wing tips sweep backwards');
+  const snapshot = () => {
+    const values: number[] = [];
+    fauna.root.traverse(obj => { values.push(...obj.matrix.elements); if (obj instanceof T.InstancedMesh) values.push(...obj.instanceMatrix.array); });
+    return values;
+  };
+  const frozen = snapshot();
+  fauna.update(120, .016, true); fauna.root.updateMatrixWorld(true);
+  assert.deepEqual(snapshot(), frozen);
+  fauna.update(121, .016, false);
+  assert.notDeepEqual(snapshot(), frozen);
+});
 
 test('calculateButterflyPosition calculates valid non-NaN 3D position in orbit', () => {
   const center = { x: 10, y: 0, z: -5 };

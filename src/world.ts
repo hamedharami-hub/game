@@ -13,6 +13,7 @@ import {
 import { resolveObstacleCollision, type ObstacleCircle } from './interactions.ts';
 import { gardenTangentEuler } from './garden-transform.ts';
 import { JUNCTION_SIGNS } from './junction-signs.ts';
+import { GROVE_STREAM, GROVE_INLET, SPIRIT_TREE, DREAM_POOL, MEADOW_ROUTES } from './landscape-layout.ts';
 
 /** Calculates spherical planet elevation drop to produce rolling planetary horizon. */
 export function planetElevation(x: number, z: number): number {
@@ -283,10 +284,7 @@ export function createWorld(scene: T.Scene) {
     geometry.computeVertexNormals();
     return geometry;
   };
-  const mainRoutes: [District, District][] = [
-    ['garden', 'greenhouse'], ['garden', 'home'], ['garden', 'village'],
-    ['garden', 'grove'], ['garden', 'sanctuary'],
-  ];
+  const mainRoutes: [District, District][] = MEADOW_ROUTES.map(to => ['garden', to]);
   for (let i = 0; i < mainRoutes.length; i++) {
     const [from, to] = mainRoutes[i];
     const b = new T.Vector3(districts[to].x, 0.035, districts[to].z);
@@ -364,7 +362,7 @@ export function createWorld(scene: T.Scene) {
     if (Math.hypot(x, z) > 79 || nearPlace(x, z, 10) || nearGrove(x, z, 19) || nearRoute(x, z, 4.8)) continue;
     treePositions.push({
       x, z, size: 0.68 + random() * 0.72,
-      tone: ['#4c8557', '#61985b', '#80a85f', '#4f927f'][Math.floor(random() * 4)],
+      tone: ['#4c8557', '#61985b', '#b6a0cb', '#4f927f'][Math.floor(random() * 4)],
       lean: (random() - 0.5) * 0.16,
     });
   }
@@ -372,6 +370,10 @@ export function createWorld(scene: T.Scene) {
   const crownGeometry = new T.SphereGeometry(1, 9, 7);
   const trunks = new T.InstancedMesh(trunkGeometry, material('#79583f'), treePositions.length);
   const crowns = new T.InstancedMesh(crownGeometry, material('#ffffff'), treePositions.length);
+  // Three silhouettes in one batch: broad jade, tall willow, flowering cloud.
+  const treeCrownScale = (i: number, size: number) =>
+    i % 3 === 0 ? [1.35 * size, 2.65 * size, 1.3 * size] :
+    i % 3 === 1 ? [2.25 * size, 1.2 * size, 2.05 * size] : [1.9 * size, 1.75 * size, 1.8 * size];
   trunks.receiveShadow = true;
   crowns.castShadow = true;
   crowns.receiveShadow = true;
@@ -383,7 +385,8 @@ export function createWorld(scene: T.Scene) {
     dummy.updateMatrix();
     trunks.setMatrixAt(i, dummy.matrix);
     dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
-    dummy.scale.set(1.9 * tree.size, 1.75 * tree.size, 1.8 * tree.size);
+    const [sx, sy, sz] = treeCrownScale(i, tree.size);
+    dummy.scale.set(sx, sy, sz);
     dummy.updateMatrix();
     crowns.setMatrixAt(i, dummy.matrix);
     crowns.setColorAt(i, new T.Color(tree.tone));
@@ -434,6 +437,29 @@ export function createWorld(scene: T.Scene) {
   water.rotation.x = -Math.PI / 2;
   water.position.y = 0.23;
   commons.add(water);
+  water.name = 'dream-lake-water';
+  const lakeDetails = (parent: T.Group, radius: number) => {
+    const details = new T.Group(); details.name = 'dream-lake-lotus'; parent.add(details);
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3 + .2, r = radius * (.65 + i % 2 * .13);
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const pad = orb('#527f83', x, .27, z, radius * .105, details);
+      pad.scale.y *= .08;
+      for (let j = 0; j < 5; j++) {
+        const petal = orb(i % 2 ? '#f1b6da' : '#fff1bf', x + Math.cos(j * 1.257) * .13, .34, z + Math.sin(j * 1.257) * .13, .17, details, true);
+        petal.scale.multiply(new T.Vector3(.75, .38, 1.2)); petal.rotation.y = -j * 1.257;
+      }
+      for (let j = 0; j < 3; j++) {
+        const reed = pillar('#719d8d', Math.cos(a) * (radius + .32) + j * .1, .6, Math.sin(a) * (radius + .32), .025, .85 + j * .12, details);
+        reed.rotation.z = .12 - j * .12;
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      const ring = shape(geometries.torus, '#bde9df', .3, .245 + i * .003, -.2, 1, 1, 1, details, true);
+      ring.rotation.x = Math.PI / 2; ring.scale.setScalar(radius * (.28 + i * .17));
+    }
+  };
+  lakeDetails(commons, 5.25);
   for (let i = 0; i < 8; i++) {
     const angle = i * Math.PI / 4;
     orb('#e9d3a0', Math.cos(angle) * 7.4, 0.32, Math.sin(angle) * 7.4, 0.44, commons);
@@ -604,11 +630,7 @@ export function createWorld(scene: T.Scene) {
   const groveGroundY = (x: number, z: number) =>
     -0.02 + planetElevation(districts.grove.x + x, districts.grove.z + z) - grove.position.y;
   const groveWaterY = (x: number, z: number) => groveGroundY(x, z) + 0.12;
-  const streamCurve = new T.CatmullRomCurve3([
-    new T.Vector3(-7, 0.035, -8), new T.Vector3(-4, 0.035, -5),
-    new T.Vector3(2, 0.035, -2), new T.Vector3(3, 0.035, 2),
-    new T.Vector3(-1, 0.035, 6), new T.Vector3(-4, 0.035, 9),
-  ]);
+  const streamCurve = new T.CatmullRomCurve3(GROVE_STREAM.map(([x, z]) => new T.Vector3(x, 0.035, z)));
   // Both ribbons sample the actual curved ground at each bank edge. The broad
   // sandy shoulder remains visible around the narrower, slightly raised water.
   const banks = new T.Mesh(ribbonGeometry(streamCurve.getPoints(48), 5.6, (x, z) => groveGroundY(x, z) + 0.025), material('#c6b891'));
@@ -859,7 +881,7 @@ export function createWorld(scene: T.Scene) {
 
   const elderNook = new T.Group();
   elderNook.name = 'spirit-tree-resting-nook';
-  elderNook.position.set(-10.8, 0, -9.8);
+  elderNook.position.set(SPIRIT_TREE.x, 0, SPIRIT_TREE.z);
   grove.add(elderNook);
   const elderTrunk = pillar('#536d58', 0, 3.6, 0, 0.94, 7.2, elderNook);
   elderTrunk.rotation.z = -0.08;
@@ -872,11 +894,11 @@ export function createWorld(scene: T.Scene) {
     branch.rotation.x = leanZ;
   }
   for (const [x, y, z, r, color] of [
-    [-1.9, 7.5, 0, 2.5, '#4d8178'], [0, 8.1, 0.4, 3.1, '#5f9a88'],
-    [1.9, 7.45, -0.15, 2.45, '#638f83'], [-0.15, 7.3, -1.8, 2.3, '#83ad8f'],
+    [-2.5, 8.2, 0, 2.9, '#72b8b1'], [0, 9.2, 0.4, 3.5, '#a5d8c6'],
+    [2.5, 8.15, -0.15, 2.8, '#bca6d7'], [-0.15, 8.1, -2.1, 2.7, '#7fb5ca'],
   ] as [number, number, number, number, string][]) {
     const crown = orb(color, x, y, z, r, elderNook);
-    crown.scale.set(1.12, 0.74, 1);
+    crown.scale.multiply(new T.Vector3(1.12, 0.74, 1));
   }
   // Exposed roots and a low, weathered seat make the spot feel restful.
   for (const angle of [-1.3, -0.55, 0.3, 1.05, 2.35]) {
@@ -903,6 +925,23 @@ export function createWorld(scene: T.Scene) {
   heartRing.rotation.y = Math.PI * 0.25;
   heartRing.scale.setScalar(0.86);
   drop(heartRing);
+  const dreamBoughs = new T.Group(); dreamBoughs.name = 'spirit-tree-dream-boughs'; elderNook.add(dreamBoughs);
+  // Spiralling ivory veins and pendulous crystal leaves, baked with the scenery.
+  for (let i = 0; i < 24; i++) {
+    const a = i * .64;
+    const vein = orb('#b6e6dc', Math.cos(a) * .86, .65 + i * .27, Math.sin(a) * .86, .11, dreamBoughs, true);
+    vein.scale.y *= 2.3;
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = i * Math.PI / 8, r = 2.5 + i % 3 * .55;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, h = 1.1 + i % 4 * .42;
+    const thread = pillar('#87b3b5', x, 7.4 - h / 2, z, .025, h, dreamBoughs);
+    thread.rotation.z = Math.cos(a) * .1;
+    const leaf = shape(geometries.cone, i % 2 ? '#d9c1ec' : '#b1f1dd', x, 7.25 - h, z, .18, .5, .14, dreamBoughs, true);
+    leaf.rotation.z = Math.PI;
+  }
+  const moon = shape(new T.TorusGeometry(1, .07, 6, 36, Math.PI * 1.55), '#ffe9bb', 0, 10.6, .2, 1, 1, 1, dreamBoughs, true);
+  moon.rotation.z = -.8;
   for (let i = 0; i < 7; i++) {
     const angle = i * Math.PI * 2 / 7;
     addDiscoveryMote(
@@ -912,17 +951,14 @@ export function createWorld(scene: T.Scene) {
     );
   }
 
-  const inletCurve = new T.CatmullRomCurve3([
-    new T.Vector3(2.8, 0.035, -1.4), new T.Vector3(4.6, 0.035, -2.7),
-    new T.Vector3(5.8, 0.035, -4.5), new T.Vector3(7.15, 0.035, -6.15),
-  ]);
+  const inletCurve = new T.CatmullRomCurve3(GROVE_INLET.map(([x, z]) => new T.Vector3(x, 0.035, z)));
   const inletBank = new T.Mesh(ribbonGeometry(inletCurve.getPoints(28), 3.05, (x, z) => groveGroundY(x, z) + 0.025), material('#bdb18e'));
   const inletWater = new T.Mesh(ribbonGeometry(inletCurve.getPoints(28), 1.95, (x, z) => groveWaterY(x, z)), riverMaterial);
   grove.add(inletBank, inletWater);
   batch.push(inletBank, inletWater);
   const poolView = new T.Group();
   poolView.name = 'hidden-stream-viewpoint';
-  poolView.position.set(7.55, 0, -6.55);
+  poolView.position.set(DREAM_POOL.x, 0, DREAM_POOL.z);
   grove.add(poolView);
   const poolBank = new T.Mesh(new T.CylinderGeometry(2.35, 2.75, 0.28, 36), material('#c8ba99'));
   poolBank.position.y = 0.08;
@@ -932,6 +968,8 @@ export function createWorld(scene: T.Scene) {
   stillWater.rotation.x = -Math.PI / 2;
   stillWater.position.y = 0.23;
   poolView.add(stillWater);
+  stillWater.name = 'hidden-dream-lake-water';
+  lakeDetails(poolView, DREAM_POOL.radius);
   const poolShimmer = shape(geometries.torus, '#d9f5dd', 0, 0.28, 0, 1, 1, 1, poolView, true);
   poolShimmer.rotation.x = Math.PI / 2;
   poolShimmer.scale.set(1.85, 1.85, 1.85);
@@ -1087,13 +1125,20 @@ export function createWorld(scene: T.Scene) {
       for (const side of [-1, 1]) {
         const limb = pillar('#668365', side * 0.68, 3, 0, 0.17, 2.35, parent);
         limb.rotation.z = side * -0.56;
-        const canopy = orb(side < 0 ? '#4d8178' : '#6ca58c', side * 1.04, 4.24, 0, 1.25, parent);
+        const canopy = orb(side < 0 ? '#7fbfc0' : '#bca6d7', side * 1.04, 4.24, 0, 1.25, parent);
         canopy.scale.set(1.1, 0.85, 1);
       }
-      orb('#81ae91', 0, 4.45, -0.12, 1.48, parent);
+      orb('#a5d8c6', 0, 4.45, -0.12, 1.48, parent);
       orb('#ffe5a6', 0.14, 2.9, 0.4, 0.3, parent, true);
       const halo = shape(geometries.torus, '#b9f0d2', 0.14, 2.9, 0.41, 0.55, 0.55, 0.55, parent, true);
       halo.rotation.y = Math.PI / 4;
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        const x = Math.cos(a) * 1.35, z = Math.sin(a) * 1.35;
+        pillar('#87b3b5', x, 3.7, z, .02, .9, parent);
+        const crystal = shape(geometries.cone, '#d9c1ec', x, 3.18, z, .12, .35, .1, parent, true);
+        crystal.rotation.z = Math.PI;
+      }
     } else if (kind === 'flower') {
       addPlacedFlower(parent, 0, 0, 1, '#e9a9ca');
     } else if (kind === 'flower-clump') {
@@ -1414,7 +1459,8 @@ export function createWorld(scene: T.Scene) {
     // A slow shared breeze is enough to make the meadows feel alive.
     treePositions.forEach((tree, i) => {
       dummy.position.set(tree.x, 3.55 * tree.size, tree.z);
-      dummy.scale.set(1.9 * tree.size, 1.75 * tree.size, 1.8 * tree.size);
+      const [sx, sy, sz] = treeCrownScale(i, tree.size);
+      dummy.scale.set(sx, sy, sz);
       dummy.rotation.set(0, tree.lean, Math.sin(time * 0.55 + i * 0.41) * 0.018 * wind);
       dummy.updateMatrix();
       crowns.setMatrixAt(i, dummy.matrix);
@@ -1434,7 +1480,8 @@ export function createWorld(scene: T.Scene) {
     });
     stems.instanceMatrix.needsUpdate = true;
     petals.instanceMatrix.needsUpdate = true;
-    water.scale.set(1 + Math.sin(time * 0.72) * 0.012, 1, 1 + Math.cos(time * 0.61) * 0.012);
+    // Circle geometry is in local XY; its Y becomes world Z after rotation.
+    water.scale.set(1 + Math.sin(time * 0.72) * 0.008, 1 + Math.cos(time * 0.61) * 0.008, 1);
     updateFallGlints(time);
     streamRipples.forEach((ripple, i) => {
       const pulse = (Math.sin(time * 1.3 + i * 1.8) + 1) / 2;
@@ -1443,7 +1490,7 @@ export function createWorld(scene: T.Scene) {
     });
     poolShimmer.scale.setScalar(1.82 + Math.sin(time * 0.62) * 0.035);
     poolShimmer.rotation.z = time * 0.08;
-    stillWater.scale.set(1 + Math.sin(time * 0.74) * 0.008, 1, 1 + Math.cos(time * 0.59) * 0.008);
+    stillWater.scale.set(1 + Math.sin(time * 0.74) * 0.008, 1 + Math.cos(time * 0.59) * 0.008, 1);
     discoveryMotes.forEach(({ mesh, center, phase, radius }) => {
       const drift = time * 0.19 + phase;
       const glint = Math.pow(Math.max(0, Math.sin(time * 0.62 + phase)), 12);

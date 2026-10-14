@@ -326,6 +326,13 @@ footer > * { pointer-events: auto; }
 .land-map__water { fill: #cfe7e3; }
 .land-map__land { fill: #9dbb84; stroke: #496d4d; stroke-width: 2.5; }
 .land-map__shore { fill: none; stroke: #e5cf93; stroke-width: 2; stroke-dasharray: 2 4; opacity: .9; }
+.land-map__path { fill: none; stroke: #ffe1a0; stroke-width: 3; stroke-linecap: round; }
+.land-map__lake { fill: #65bfc4; stroke: #e8f9e4; stroke-width: 1; }
+.land-map__stream { fill: none; stroke: #4aafb6; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.land-map__spirit { fill: #c3f3dd; stroke: #345c60; stroke-width: 1.5; }
+.land-map__spirit circle { fill: #ffe6a5; stroke: #796638; }
+.land-map__north { fill: #304f50; font-size: 8px; text-anchor: end; }
+.land-map__legend { margin: .3rem 0; color: #37524b; font-size: .72rem; line-height: 1.6; }
 .land-map__marker { cursor: pointer; outline: none; }
 .land-map__marker circle { stroke: #f9fff1; stroke-width: 2.4; filter: drop-shadow(0 1px 1px #243d3566); }
 .land-map__marker text { fill: #fff; font: 700 9px sans-serif; pointer-events: none; }
@@ -960,6 +967,13 @@ main.building #interact { display: none; }
 .save-status[data-failed="true"] { background: #fff0dd; color: #782f20; border: 2px solid #782f20; }
 .garden-actions { flex-wrap: wrap; }
 #overlay.photo-framing { align-items: end; background: transparent; backdrop-filter: none; }
+/* Low power disables compositor blur too, not just WebGL shadows/resolution. */
+main[data-graphics-quality="low"] .glass,
+main[data-graphics-quality="low"] #overlay,
+main[data-graphics-quality="low"] .dialog {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 #overlay.photo-framing .dialog { width: min(640px, calc(100vw - 24px)); max-height: 40dvh; padding: 10px 14px; overflow-y: auto; }
 #overlay.photo-framing h2 { font-size: 17px; margin: 0; }
 #overlay.photo-framing p { margin: 3px 0; }
@@ -968,7 +982,7 @@ main.building #interact { display: none; }
 .build-palette.is-collapsed > :not(.build-palette__heading) { display: none; }
 #editing-camera { position: fixed; inset-inline-end: 12px; top: calc(150px + var(--safe-top)); z-index: 6; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; max-width: 260px; }
 #editing-camera[hidden] { display: none; }
-#editing-camera button { min-width: 44px; min-height: 44px; }
+#editing-camera button { min-width: 45px; min-height: 45px; }
 #editing-camera span { width: 100%; font-size: 12px; text-align: center; }
 @media (max-width: 600px) {
   #editing-camera { inset-inline-end: auto; inset-inline-start: 12px; max-width: 160px; top: calc(168px + var(--safe-top)); }
@@ -977,12 +991,12 @@ main.building #interact { display: none; }
 }
 .graphics-settings label { display: grid; gap: 8px; }
 .graphics-settings input[type="range"], .graphics-settings input[type="file"] { max-width: 100%; min-height: 44px; }
-.action-bar .flight-altitude-btn { position: fixed; bottom: calc(98px + var(--safe-bottom)); min-width: 64px; min-height: 44px; font-size: 13px; }
+.action-bar .flight-altitude-btn { position: fixed; bottom: calc(98px + var(--safe-bottom)); min-width: 64px; min-height: 45px; font-size: 13px; }
 #flight-ascend-btn { inset-inline-end: 12px; }
 #flight-descend-btn { inset-inline-end: 84px; }
 @media (max-width: 600px) {
   .action-bar { gap: 4px; }
-  .action-bar button { min-width: 44px; min-height: 44px; font-size: 12px; padding: 6px 8px; }
+  .action-bar button, #camera-view { min-width: 45px; min-height: 45px; font-size: 12px; padding: 6px 8px; }
   #camera-view { position: fixed; top: calc(120px + var(--safe-top)); inset-inline-end: 10px; font-size: 12px; }
   .scene-tools { top: calc(65px + var(--safe-top)); max-width: calc(100vw - 20px); inset-inline-start: 10px; }
   .scene-tools button { font-size: 11px; padding: 5px 7px; }

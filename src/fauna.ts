@@ -263,7 +263,7 @@ export function createFaunaMeshGroup(scene: T.Scene) {
 
   root.add(deerGroup);
 
-  // --- 3. Celestial Soaring Birds (3 graceful luminous sky birds) ---
+  // --- 3. Moon swallows: tapered wings, forked tails, banked flight and glide. ---
   const celestialBirds: { group: T.Group; orbitRadius: number; altitude: number; speed: number; phase: number }[] = [];
   const birdMat = new T.MeshStandardMaterial({
     color: '#ffffff',
@@ -277,13 +277,23 @@ export function createFaunaMeshGroup(scene: T.Scene) {
   // The flock shares one body batch and one wing batch (world matrices are set
   // per frame), so three birds cost two draw calls instead of nine.
   const birdBodies = new T.InstancedMesh(new T.ConeGeometry(0.12, 0.55, 5), birdMat, 3);
-  const birdWingGeom = new T.PlaneGeometry(0.42, 0.22);
-  birdWingGeom.translate(0.21, 0, 0);
+  const birdWingGeom = new T.BufferGeometry();
+  birdWingGeom.setAttribute('position', new T.Float32BufferAttribute([
+    0, 0, .12, .34, 0, .03, .7, 0, -.24, .24, 0, -.13,
+  ], 3));
+  birdWingGeom.setIndex([0, 1, 3, 1, 2, 3]); birdWingGeom.computeVertexNormals();
   const birdWings = new T.InstancedMesh(birdWingGeom, birdMat, 6);
+  const tailGeom = new T.BufferGeometry();
+  tailGeom.setAttribute('position', new T.Float32BufferAttribute([
+    0, 0, -.19, -.15, 0, -.63, 0, 0, -.4, .15, 0, -.63,
+  ], 3));
+  tailGeom.setIndex([0, 1, 2, 0, 2, 3]); tailGeom.computeVertexNormals();
+  const birdTails = new T.InstancedMesh(tailGeom, birdMat, 3);
+  birdBodies.name = 'moon-swallow-bodies'; birdWings.name = 'moon-swallow-wings'; birdTails.name = 'moon-swallow-tails';
   birdBodies.instanceMatrix.setUsage(T.DynamicDrawUsage);
   birdWings.instanceMatrix.setUsage(T.DynamicDrawUsage);
   const birdScratch = new T.Matrix4();
-  root.add(birdBodies, birdWings);
+  root.add(birdBodies, birdWings, birdTails);
 
   for (let i = 0; i < 3; i++) {
     const birdGroup = new T.Group();
@@ -342,10 +352,11 @@ export function createFaunaMeshGroup(scene: T.Scene) {
     root,
     update: (time: number, dt: number, reducedMotion = false) => {
       // Animate butterflies
-      for (let i = 0; i < butterflies.length; i++) {
+       for (let i = 0; i < butterflies.length; i++) {
         const b = butterflies[i];
         if (reducedMotion) {
           b.group.position.set(b.center.x, 0.8 + planetElevation(b.center.x, b.center.z), b.center.z);
+          b.flap(0);
           continue;
         }
         const ang = time * 0.85 + i * 2.1;
@@ -370,45 +381,48 @@ export function createFaunaMeshGroup(scene: T.Scene) {
       }
 
       // Animate celestial soaring birds
+      const wildlifeTime = reducedMotion ? 0 : time;
       for (let i = 0; i < celestialBirds.length; i++) {
         const cb = celestialBirds[i];
-        const birdAng = time * cb.speed + cb.phase;
-        const bob = Math.sin(time * 1.8 + i) * 0.35;
+        const birdAng = wildlifeTime * cb.speed + cb.phase;
+        const bob = reducedMotion ? 0 : Math.sin(time * 1.8 + i) * 0.35;
         const pos = calculateCelestialBirdPosition({ x: 0, y: 0, z: 0 }, birdAng, cb.orbitRadius, cb.altitude, bob);
         cb.group.position.set(pos.x, pos.y, pos.z);
-        cb.group.rotation.y = -birdAng + Math.PI / 2;
+        cb.group.rotation.set(0, -birdAng, reducedMotion ? 0 : -.16 + Math.sin(time * .55 + i) * .09);
         cb.group.updateMatrix();
 
-        const birdFlap = reducedMotion ? 0 : Math.sin(time * 5.5 + i) * 0.38;
+        const gliding = Math.sin(wildlifeTime * .65 + i) > .25;
+        const birdFlap = reducedMotion || gliding ? .08 : Math.sin(time * 5.5 + i) * .38;
         dummy.position.set(0, 0, 0);
         dummy.rotation.set(Math.PI / 2, 0, 0);
         dummy.scale.set(1, 1, 1);
         dummy.updateMatrix();
         birdBodies.setMatrixAt(i, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
+        dummy.rotation.set(0, 0, 0); dummy.updateMatrix();
+        birdTails.setMatrixAt(i, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
         dummy.position.set(-0.04, 0, 0);
-        dummy.rotation.set(0, 0, birdFlap);
+        dummy.rotation.set(0, 0, Math.PI + birdFlap);
         dummy.updateMatrix();
         birdWings.setMatrixAt(i * 2, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
         dummy.position.set(0.04, 0, 0);
-        dummy.rotation.set(0, Math.PI, -birdFlap);
+        dummy.rotation.set(0, 0, -birdFlap);
         dummy.updateMatrix();
         birdWings.setMatrixAt(i * 2 + 1, birdScratch.multiplyMatrices(cb.group.matrix, dummy.matrix));
       }
       birdBodies.instanceMatrix.needsUpdate = true;
       birdWings.instanceMatrix.needsUpdate = true;
+      birdTails.instanceMatrix.needsUpdate = true;
 
       // Animate luminous pond fish
       for (let i = 0; i < pondFish.length; i++) {
         const pf = pondFish[i];
-        const fishAng = time * pf.speed + pf.phase;
+        const fishAng = wildlifeTime * pf.speed + pf.phase;
         const pos = calculateFishPondPosition({ x: 0, y: 0, z: 0 }, fishAng, pf.radiusX, pf.radiusZ);
         pf.group.position.set(pos.x, pos.y, pos.z);
         // Face tangential velocity
         pf.group.rotation.y = -fishAng;
 
-        if (!reducedMotion) {
-          pf.tail.rotation.y = Math.sin(time * 7.5 + i * 2) * 0.42;
-        }
+        pf.tail.rotation.y = reducedMotion ? 0 : Math.sin(time * 7.5 + i * 2) * .42;
       }
     },
   };

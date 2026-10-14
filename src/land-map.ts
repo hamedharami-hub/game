@@ -31,6 +31,8 @@
  * ```
  */
 
+import { GROVE_STREAM, GROVE_INLET, SPIRIT_TREE, DREAM_POOL, MEADOW_ROUTES } from './landscape-layout.ts';
+
 export interface LandMapWorldPosition {
   readonly x: number;
   readonly z: number;
@@ -63,6 +65,8 @@ export interface LandMapProjectionOptions {
 }
 
 export interface LandMapOptions extends LandMapProjectionOptions {
+  /** Show the shared game's terrain; omitted for generic maps. */
+  readonly showTerrain?: boolean;
   readonly label?: string;
   readonly selectedId?: string | null;
   readonly playerPosition?: LandMapWorldPosition | null;
@@ -294,6 +298,28 @@ function renderLandmarkMarkers(
 }
 
 /** Render accessible static markup; use `renderLandMap` to attach selection handlers. */
+function renderTerrain(landmarks: readonly LandMapLandmark[], projection: Projection): string {
+  const point = (x: number, z: number) => {
+    const p = projectPosition({ x, z }, projection);
+    return `${numberText(p.mapX)} ${numberText(p.mapY)}`;
+  };
+  const garden = landmarks.find(p => p.id === 'garden');
+  const grove = landmarks.find(p => p.id === 'grove');
+  const routes = garden ? MEADOW_ROUTES.map((id, i) => {
+    const end = landmarks.find(p => p.id === id); if (!end) return '';
+    const dx = end.x - garden.x, dz = end.z - garden.z, length = Math.hypot(dx, dz);
+    if (!length) return '';
+    const ax = garden.x + dx / length * 9.2, az = garden.z + dz / length * 9.2;
+    const rx = end.x - ax, rz = end.z - az, span = Math.hypot(rx, rz);
+    const bend = (i % 2 ? 1 : -1) * (2.5 + i % 3);
+    return `<path class="land-map__path" d="M ${point(ax, az)} Q ${point((ax + end.x) / 2 - rz / span * bend, (az + end.z) / 2 + rx / span * bend)} ${point(end.x, end.z)}"/>`;
+  }).join('') : '';
+  const water = (x: number, z: number, r: number) => `<circle class="land-map__lake" transform="translate(${point(x, z)})" r="${numberText(r * projection.scale)}"/>`;
+  const streams = grove ? [GROVE_STREAM, GROVE_INLET].map(points => `<polyline class="land-map__stream" points="${points.map(([x, z]) => point(grove.x + x, grove.z + z)).join(' ')}"/>`).join('') : '';
+  const spirit = grove ? `<g class="land-map__spirit" transform="translate(${point(grove.x + SPIRIT_TREE.x, grove.z + SPIRIT_TREE.z)})"><title>درخت روح؛ قلب روشن بیشه</title><path d="M 0 7 V -2 M 0 2 L -5 -3 M 0 0 L 5 -5"/><ellipse cy="-5" rx="8" ry="4"/><circle cy="1" r="2"/></g>${water(grove.x + DREAM_POOL.x, grove.z + DREAM_POOL.z, DREAM_POOL.radius)}` : '';
+  return `<g data-map-terrain="true" aria-hidden="true" pointer-events="none">${routes}${water(0, 0, 5.25)}${streams}${spirit}<text class="land-map__north" x="${numberText(projection.width - 20)}" y="24">↑ شمال</text></g>`;
+}
+
 export function renderLandMapMarkup(
   input: readonly LandMapLandmark[],
   options: LandMapOptions = {},
@@ -313,8 +339,9 @@ export function renderLandMapMarkup(
   const selectedLandmark = landmarks.find(item => item.id === selectedId);
   const initialStatus = selectedLandmark ? `${selectedLandmark.name} انتخاب شده است.` : '';
   const landPath = getLandPath(projection.width, projection.height);
+  const terrain = options.showTerrain ? renderTerrain(landmarks, projection) : '';
 
-  return `<section class="land-map" aria-label="${label}" data-land-map="true"><div class="land-map__heading"><h2 class="land-map__title">${label}</h2><p class="land-map__subtitle">یک سرزمین پیوسته</p></div><svg class="land-map__visual" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${numberText(projection.width)} ${numberText(projection.height)}" role="group" aria-label="${label}؛ مکان‌ها روی یک دشت پیوسته"><rect class="land-map__water" width="${numberText(projection.width)}" height="${numberText(projection.height)}" rx="16"/><path class="land-map__land" d="${landPath}"/><path class="land-map__shore" d="${landPath}"/>${renderLandmarkMarkers(landmarks, projected, selectedId)}${renderPlayerMarker(playerPosition, projection)}</svg>${emptyState}<ol class="land-map__landmarks" aria-label="انتخاب یک مکان">${mapItems}</ol><p class="land-map__status" data-land-map-status="true" role="status" aria-live="polite">${escapeHtml(initialStatus)}</p></section>`;
+  return `<section class="land-map" aria-label="${label}" data-land-map="true"><div class="land-map__heading"><h2 class="land-map__title">${label}</h2><p class="land-map__subtitle">یک سرزمین پیوسته</p></div><svg class="land-map__visual" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${numberText(projection.width)} ${numberText(projection.height)}" role="group" aria-label="${label}؛ مکان‌ها روی یک دشت پیوسته"><rect class="land-map__water" width="${numberText(projection.width)}" height="${numberText(projection.height)}" rx="16"/><path class="land-map__land" d="${landPath}"/><path class="land-map__shore" d="${landPath}"/>${terrain}${renderLandmarkMarkers(landmarks, projected, selectedId)}${renderPlayerMarker(playerPosition, projection)}</svg>${options.showTerrain ? '<p class="land-map__legend">آبی: آبگیر و جویبار · طلایی: راه‌های دشت · درخت روشن: درخت روح<br>یک مکان را انتخاب کن تا پیاده به آن بروی.</p>' : ''}${emptyState}<ol class="land-map__landmarks" aria-label="انتخاب یک مکان">${mapItems}</ol><p class="land-map__status" data-land-map-status="true" role="status" aria-live="polite">${escapeHtml(initialStatus)}</p></section>`;
 }
 
 /**
@@ -346,6 +373,7 @@ export function renderLandMap(
   const currentOptions = (): LandMapOptions => ({
     ...projectionOptions,
     label: options.label,
+    showTerrain: options.showTerrain,
     selectedId,
     playerPosition,
   });

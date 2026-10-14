@@ -1,4 +1,7 @@
 import * as T from 'three';
+import { createPhotoRenderPolicy } from './photo-render-policy.ts';
+import { createRenderBudget } from './render-budget.ts';
+import { createGpuFrameGate } from './gpu-frame-gate.ts';
 import './style.css';
 import { directionFrame } from './directions';
 import { createGarden } from './garden';
@@ -355,6 +358,7 @@ try {
   throw new Error('WebGL unavailable');
 }
 renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.5));
+gameRoot.dataset.graphicsQuality = graphicsQuality;
 renderer.shadowMap.enabled = graphicsQuality === 'high';
 renderer.shadowMap.autoUpdate = false;
 renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
@@ -365,6 +369,7 @@ renderer.toneMappingExposure = .96;
 $('world').append(renderer.domElement);
 renderer.domElement.setAttribute('aria-label', 'برای قدم‌زدن روی زمین کلیک کن؛ حرکت با کلیدهای جهت‌دار هم کار می‌کند.');
 renderer.domElement.tabIndex = 0;
+const gpuFrameGate = createGpuFrameGate(renderer.getContext() as WebGL2RenderingContext);
 const skyLight = new T.HemisphereLight(0xfff3d7, 0x52785d, 1.65);
 scene.add(skyLight);
 const sun = new T.DirectionalLight(0xffe1a8, 2.35);
@@ -1024,7 +1029,7 @@ function updateCompanionIdleAwareness(now: number) {
 }
 
 function triggerCompanionIdleReaction(now: number) {
-  if (now < statusProtectedUntil || gor.userData.waiting) return;
+  if (flightState !== 'grounded' || now < statusProtectedUntil || gor.userData.waiting) return;
   const dist = angel.position.distanceTo(gor.position);
   if (dist > IDLE_AFFECTION_MAX_DISTANCE) return;
 
@@ -1365,6 +1370,7 @@ function placeDialog() {
   }
 }
 $('place-action').onclick = placeDialog;
+let photoCapturePending = false;
 $('photo-action').onclick = () => {
   if (ownGarden.editing) ownGarden.close(); if (building) setBuilding(false);
   dialog('عکس دونفره', '<p>کادر را مستقل از شخصیت تنظیم کن؛ خروجی فقط منظره است، بدون رابط.</p>', '<div class="photo-controls" role="group" aria-label="تنظیم کادر عکس"><button data-photo-pan="up" aria-label="کادر به شمال">↑</button><button data-photo-pan="left" aria-label="کادر به غرب">←</button><button id="photo-center">وسط دو نفر</button><button data-photo-pan="right" aria-label="کادر به شرق">→</button><button data-photo-pan="down" aria-label="کادر به جنوب">↓</button><button id="photo-near">نزدیک‌تر</button><button id="photo-far">دورتر</button></div><button id="photo-wave">ژست سلام</button><button id="photo-capture">ذخیرهٔ عکس</button>', $('photo-action'));
@@ -1373,7 +1379,10 @@ $('photo-action').onclick = () => {
     overlay.dataset.photoX = String(photoFocus!.x); overlay.dataset.photoZ = String(photoFocus!.z);
     overlay.dataset.photoZoom = String(zoom);
   };
-  const centerPhoto = () => { photoFocus = { x: (angel.position.x + gor.position.x) / 2, z: (angel.position.z + gor.position.z) / 2 }; updatePhotoControls(); };
+  // Reset to this session's starting composition. Companion follow/idle motion
+  // must not make the reset target drift while adjusting the independent frame.
+  const photoCenter = { x: (angel.position.x + gor.position.x) / 2, z: (angel.position.z + gor.position.z) / 2 };
+  const centerPhoto = () => { photoFocus = { ...photoCenter }; updatePhotoControls(); };
   centerPhoto(); overlay.classList.add('photo-framing');
   $('photo-center').onclick = centerPhoto;
   for (const button of overlay.querySelectorAll<HTMLButtonElement>('[data-photo-pan]')) button.onclick = () => {
@@ -1386,10 +1395,25 @@ $('photo-action').onclick = () => {
   $('photo-far').onclick = () => { zoom = T.MathUtils.clamp(zoom + .12, .68, 1.4); updatePhotoControls(); };
   $('photo-wave').onclick = () => { const until = performance.now() + 15000; for (const actor of [angel, gor]) { actor.userData.emoteKind = 'wave'; actor.userData.emoteUntil = until; } };
   $('photo-capture').onclick = () => {
+    if (photoCapturePending) return;
+    photoCapturePending = true;
     // Apply the latest framing even when capture follows a pan in the same frame.
-    lastFrame = 0; animate();
-    renderer.render(scene, camera);
-    renderer.domElement.toBlob(blob => { if (blob) { downloadFile(blob, 'dream-caravan-photo.png'); setStatus('عکس منظره آماده شد.'); } else setStatus('مرورگر نتوانست عکس بسازد.'); }, 'image/png');
+    // The pending flag suppresses animate's draw: capture draws exactly once,
+    // then lets PNG readback/encoding finish before scheduling new scene draws.
+    try {
+      lastFrame = 0; animate();
+      renderer.render(scene, camera);
+      gpuFrameGate.rendered();
+      renderer.domElement.toBlob(blob => {
+        try {
+          if (blob) { downloadFile(blob, 'dream-caravan-photo.png'); setStatus('عکس منظره آماده شد.'); }
+          else setStatus('مرورگر نتوانست عکس بسازد.');
+        } finally { photoCapturePending = false; }
+      }, 'image/png');
+    } catch {
+      photoCapturePending = false;
+      setStatus('مرورگر نتوانست عکس بسازد.');
+    }
     closeDialog();
   };
 };
@@ -1419,6 +1443,7 @@ $('camera-view').onclick = () => {
 
 function applyGraphicsQuality() {
   graphicsQuality = resolveGraphicsQuality(graphicsPreference, graphicsCapabilities);
+  gameRoot.dataset.graphicsQuality = graphicsQuality;
   renderer.setPixelRatio(Math.min(devicePixelRatio, graphicsQuality === 'low' ? 1 : 1.5));
   renderer.shadowMap.enabled = graphicsQuality === 'high';
   renderer.shadowMap.needsUpdate = graphicsQuality === 'high';
@@ -1493,7 +1518,8 @@ function openLandMap() {
       selectedId: null,
       playerPosition: { x: angel.position.x, z: angel.position.z },
       label: 'مکان‌های دشت',
-      worldBounds: { minX: -31, maxX: 33, minZ: -38, maxZ: 28 },
+      showTerrain: true,
+      worldBounds: { minX: -40, maxX: 38, minZ: -38, maxZ: 32 },
     },
   );
 }
@@ -1819,6 +1845,8 @@ const frameSamples: number[] = [];
 };
 let lastFrame = 0;
 let viewScale = 1;
+const shouldRenderPhotoFrame = createPhotoRenderPolicy();
+const renderBudget = createRenderBudget();
 function animate() {
   const now = performance.now();
   const frameInterval = overlay.hidden ? 1000 / 30 : 200;
@@ -2023,6 +2051,7 @@ function animate() {
   } else if (flightState === 'descending' && baseAltitude <= 0.04) {
     flightState = 'grounded';
     baseAltitude = 0;
+    markPlayerActive(now);
     audioEngine.playFlightLanding();
     const flightBtn = $<HTMLButtonElement>('flight-toggle-btn');
     flightBtn?.setAttribute('aria-pressed', 'false');
@@ -2156,13 +2185,18 @@ function animate() {
 
   nearestCompanion = angel.position.distanceTo(gor.position) < 2.35;
   const interaction = $<HTMLButtonElement>('interact');
-  interaction.disabled = !nearestCompanion;
-  interaction.textContent = nearestCompanion ? 'سلام' : 'نزدیک شو';
-  $('place-action').textContent = activeMoodPlace ? districts[activeMoodPlace].name : 'اینجا';
-  interaction.setAttribute('aria-label', nearestCompanion ? 'صحبت با گوراستاخ' : 'برای صحبت، به گوراستاخ نزدیک شو');
+  if (interaction.disabled === nearestCompanion) interaction.disabled = !nearestCompanion;
+  const interactionText = nearestCompanion ? 'سلام' : 'نزدیک شو';
+  if (interaction.textContent !== interactionText) interaction.textContent = interactionText;
+  const placeAction = $('place-action');
+  const placeText = activeMoodPlace ? districts[activeMoodPlace].name : 'اینجا';
+  if (placeAction.textContent !== placeText) placeAction.textContent = placeText;
+  const interactionLabel = nearestCompanion ? 'صحبت با گوراستاخ' : 'برای صحبت، به گوراستاخ نزدیک شو';
+  if (interaction.getAttribute('aria-label') !== interactionLabel) interaction.setAttribute('aria-label', interactionLabel);
   districtWorld.tick(elapsed, reducedMotion, atmosphere.windStrength);
   districtWorld.updateHomeView(angel.position.x, angel.position.z, reducedMotion);
-  gameRoot.dataset.insideHome = String(districtWorld.root('home').userData.inside);
+  const insideHome = String(districtWorld.root('home').userData.inside);
+  if (gameRoot.dataset.insideHome !== insideHome) gameRoot.dataset.insideHome = insideHome;
   fauna.update(elapsed, dt, reducedMotion);
   fx.update(dt, now);
   fx.updateRibbonTrails(angel.position, gor.position, isFlying);
@@ -2234,7 +2268,20 @@ function animate() {
   }
   const waterDistance = Math.hypot(angel.position.x, angel.position.z);
   audioEngine.updateAmbience(atmosphere.windStrength, atmosphere.rainStrength, waterDistance);
-  renderer.render(scene, camera);
+  // Only a reduced-motion photo with no active pose can reuse its last image.
+  // Simulation/UI still run; capture explicitly renders even on a cache hit.
+  const staticPhoto = reducedMotion && !!photoFocus && !isEmbracing
+    && now >= angel.userData.emoteUntil && now >= gor.userData.emoteUntil;
+  const photoSignature = staticPhoto ? [camera.position.toArray(), cameraFocus.toArray(),
+    zoom, viewScale, innerWidth, innerHeight, graphicsQuality, atmosphere.phase,
+    atmosphere.weather,
+    angel.position.toArray(), gor.position.toArray(), state.life.homeArrangement].join('|') : '';
+  if (!photoCapturePending && renderBudget.ready(performance.now()) && gpuFrameGate.ready() && shouldRenderPhotoFrame(staticPhoto, photoSignature)) {
+    const renderStart = performance.now();
+    renderer.render(scene, camera);
+    gpuFrameGate.rendered();
+    renderBudget.rendered(renderStart, performance.now());
+  }
   frameSamples.push(performance.now() - now);
   if (frameSamples.length > 120) frameSamples.shift();
 }

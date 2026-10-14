@@ -102,12 +102,49 @@ test('map anchors stay fixed and the grove spirit-tree heart reads as a landmark
 
   const elderNook = world.root('grove').getObjectByName('spirit-tree-resting-nook');
   assert.ok(elderNook, 'the spirit tree resting nook should remain in the grove');
+  assert.ok(elderNook.getObjectByName('spirit-tree-dream-boughs'), 'the ivory veins and crystal canopy are retained after baking');
   const heart = elderNook.getObjectByName('spirit-tree-heart') as THREE.Mesh | undefined;
   const ring = elderNook.getObjectByName('spirit-tree-heart-ring') as THREE.Mesh | undefined;
   assert.ok(heart?.isMesh, 'the heart should remain a separate visible mesh');
   assert.ok(ring?.isMesh, 'the heart should retain its separate glowing ring');
   assert.ok(ring.scale.x >= 0.86, 'the ring should frame the heart clearly from the grove clearing');
   assert.ok((heart.material as THREE.MeshStandardMaterial).emissiveIntensity >= 0.82, 'the heart should stay bright enough to spot among the canopy');
+});
+
+test('dream lake surface stays planar, inside bank and stops with reduced motion', () => {
+  const scene = new THREE.Scene(), world = createWorld(scene);
+  const lake = scene.getObjectByName('dream-lake-water')!;
+  const hidden = scene.getObjectByName('hidden-dream-lake-water')!;
+  for (let time = 0; time < 60; time += .5) {
+    world.tick(time, false);
+    for (const water of [lake, hidden]) {
+      assert.equal(water.scale.z, 1);
+      assert.ok(water.scale.x >= .992 && water.scale.x <= 1.008);
+      assert.ok(water.scale.y >= .992 && water.scale.y <= 1.008);
+    }
+  }
+  const before = lake.scale.clone(); world.tick(100, true);
+  assert.ok(lake.scale.equals(before));
+});
+
+test('baked spirit veins remain delicate instead of replacing their radius with unit scale', () => {
+  const scene = new THREE.Scene(), world = createWorld(scene);
+  const elder = world.root('grove').getObjectByName('spirit-tree-resting-nook')!;
+  scene.updateMatrixWorld(true);
+  const tint = new THREE.Color('#b6e6dc'), point = new THREE.Vector3();
+  let vertices = 0;
+  scene.traverse(obj => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const positions = obj.geometry.getAttribute('position');
+    const material = obj.material as THREE.MeshStandardMaterial;
+    if (!positions || !material.color?.equals(tint)) return;
+    for (let i = 0; i < positions.count; i++) {
+      elder.worldToLocal(point.fromBufferAttribute(positions, i).applyMatrix4(obj.matrixWorld));
+      assert.ok(Math.hypot(point.x, point.z) < 1, 'the veins hug the .94m trunk');
+      vertices++;
+    }
+  });
+  assert.ok(vertices > 100, 'assert against the actual baked vein geometry');
 });
 
 test('fixed bridge endpoints stay clear of overlapping river collision circles', () => {

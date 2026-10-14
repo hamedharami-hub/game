@@ -1,7 +1,21 @@
 import { test, expect } from '@playwright/test';
 import manifest from '../docs/ASSET_MANIFEST.json' with { type: 'json' };
 
-test('all approved character looks and diagonal atlases decode; saved appearance survives play', async ({ page }) => {
+test('all approved character looks and diagonal atlases decode; saved appearance survives play', async ({ page, baseURL }) => {
+  // Asset integrity is not a concurrent full-catalog decode stress test of the
+  // running GPU scene. Keep every atlas/dimension assertion, in a blank context
+  // page, then exercise the real saved appearance and build interaction below.
+  const atlases = [...manifest.assets, ...manifest.diagonalAssets];
+  const assetPage = await page.context().newPage();
+  try {
+    const decoded = await assetPage.evaluate(async paths => Promise.all(paths.map(async path => {
+      const image = new Image();
+      image.src = path;
+      await image.decode();
+      return [image.naturalWidth, image.naturalHeight];
+    })), atlases.map(asset => new URL(`/${asset.runtime.replace('public/', '')}`, baseURL).href));
+    expect(decoded).toEqual(atlases.map(asset => [asset.width, asset.height]));
+  } finally { await assetPage.close(); }
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.addInitScript(() => localStorage.setItem(
     'dream-caravan:garden:v1:profile:identity-memory',
@@ -18,15 +32,6 @@ test('all approved character looks and diagonal atlases decode; saved appearance
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/?profile=identity-memory');
   await expect(page.locator('canvas')).toBeVisible();
-
-  const atlases = [...manifest.assets, ...manifest.diagonalAssets];
-  const decoded = await page.evaluate(async paths => Promise.all(paths.map(async path => {
-    const image = new Image();
-    image.src = path;
-    await image.decode();
-    return [image.naturalWidth, image.naturalHeight];
-  })), atlases.map(asset => `/${asset.runtime.replace('public/', '')}`));
-  expect(decoded).toEqual(atlases.map(asset => [asset.width, asset.height]));
 
   await page.locator('#build-action').click();
   await expect(page.locator('#build-palette')).toBeVisible();

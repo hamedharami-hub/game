@@ -13,6 +13,19 @@ const landmarks: LandMapLandmark[] = [
   { id: 'grove', name: 'بیشهٔ جویبار', x: -21, z: 19, icon: '♤', color: '#8dc9bd' },
 ];
 
+test('terrain map projects real lakes and spirit tree without adding destination controls', () => {
+  const options = { showTerrain: true, worldBounds: { minX: -40, maxX: 38, minZ: -38, maxZ: 32 } };
+  const html = renderLandMapMarkup(landmarks, options);
+  const [spirit] = projectLandmarks([{ id: 'spirit', name: 'روح', x: -31.8, z: 9.2 }], options);
+  const coordinate = (n: number) => String(Number(n.toFixed(3)));
+  assert.ok(html.includes(`class="land-map__spirit" transform="translate(${coordinate(spirit.mapX)} ${coordinate(spirit.mapY)})"`));
+  assert.equal((html.match(/class="land-map__lake"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="land-map__stream"/g) ?? []).length, 2);
+  assert.equal((html.match(/data-landmark-control="true"/g) ?? []).length, landmarks.length * 2);
+  assert.match(html, /pointer-events="none"/);
+  assert.doesNotMatch(renderLandMapMarkup(landmarks), /data-map-terrain/);
+});
+
 test('world x/z positions project proportionally with positive z moving down', () => {
   const projected = projectLandmarks([
     { id: 'origin', name: 'Origin', x: 0, z: 0 },
